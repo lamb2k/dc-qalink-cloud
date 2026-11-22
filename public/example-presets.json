@@ -1,0 +1,23 @@
+{
+  "format": "dc-qalink.presets",
+  "version": 1,
+  "program": "example.elf",
+  "presets": [
+    { "id": "start", "label": "Start of the scene", "group": "Scene", "detail": "camera at the ring, 24 cubes" },
+    { "id": "burst", "label": "Burst: 60 cubes", "group": "Scene", "detail": "the heaviest picture in the demo" },
+    { "id": "orbit-far", "label": "Orbit, far camera", "group": "Camera", "detail": "distance 6, slow orbit" },
+    { "id": "orbit-near", "label": "Orbit, near camera", "group": "Camera", "detail": "distance 2, fills the screen" },
+    { "id": "floor-only", "label": "Floor only", "group": "Tests", "detail": "no cubes: the floor grid alone" },
+    { "id": "tex-stress", "label": "Texture stress", "group": "Tests", "detail": "6 textures swapped each picture" }
+  ],
+  "options": [
+    { "name": "show_fps", "label": "Show picture time on screen", "type": "bool", "value": false },
+    { "name": "cubes", "label": "Cubes in the ring", "type": "int", "min": 8, "max": 96, "value": 24 },
+    { "name": "filter", "label": "Texture filter", "type": "enum", "values": ["nearest", "bilinear", "trilinear"], "value": "bilinear" },
+    { "name": "translucent", "label": "Translucent faces", "type": "bool", "value": true }
+  ],
+  "scripts": [
+    { "name": "orbit-left", "text": "# orbit the camera left for 2 s\n60 stick -1 0\n10 -" },
+    { "name": "menu-open-close", "text": "# open the menu, move down twice, close\n2 START\n20 -\n2 DOWN\n8 -\n2 DOWN\n8 -\n2 B" }
+  ]
+}

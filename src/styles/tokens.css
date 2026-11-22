@@ -1,0 +1,249 @@
+/* dc-qalink Studio design tokens. The only file allowed raw colours and px values (lint-tokens.mjs).
+   Themes: [data-theme="dark"] and [data-theme="light"], set on <html> or on any container.
+   Semantic colours follow the Okabe-Ito colour-blind-safe hues and always ship with an icon or a word. */
+
+@font-face { font-family: "Inter"; font-weight: 400; font-display: block; src: url("fonts/inter-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 500; font-display: block; src: url("fonts/inter-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-display: block; src: url("fonts/inter-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: block; src: url("fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: block; src: url("fonts/jetbrains-mono-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 600; font-display: block; src: url("fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2"); }
+
+:root {
+  /* type */
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-base: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 24px;
+  --lh-xs: 14px;
+  --lh-sm: 16px;
+  --lh-md: 20px;
+  --lh-lg: 24px;
+  --lh-xl: 28px;
+  --lh-2xl: 32px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --tracking-caps: 0.04em;
+
+  /* spacing, 4 px grid */
+  --s-px: 1px;
+  --s-half: 2px;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* fixed sizes */
+  --h-control-sm: 24px;
+  --h-control: 28px;
+  --h-control-lg: 32px;
+  --h-row: 28px;
+  --h-row-dense: 22px;
+  --h-menubar: 28px;
+  --h-optionsbar: 36px;
+  --h-topbar: 48px;
+  --h-panel-head: 28px;
+  --h-tab: 32px;
+  --w-rail: 40px;
+  --w-nav: 232px;
+  --w-side: 320px;
+  --w-side-wide: 360px;
+  --w-dialog: 480px;
+  --w-palette: 560px;
+  --w-toast: 360px;
+  --w-field: 240px;
+  --w-col-num: 88px;
+  --w-col-tick: 56px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --thumb-w: 128px;
+  --thumb-h: 96px;
+  --loupe: 176px;
+  --swatch: 12px;
+  --dot: 8px;
+  --mark: 6px;
+  --bp-phone: 40em;
+  --w-phone: 390px;
+
+  /* radii and borders */
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 6px;
+  --r-4: 8px;
+  --r-full: 999px;
+  --bw: 1px;
+  --bw-2: 2px;
+  --bw-3: 3px;
+
+  /* motion: only to show change */
+  --dur-fast: 80ms;
+  --dur: 140ms;
+  --dur-slow: 220ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* canvas text (charts read these with getComputedStyle) */
+  --chart-font: 500 10px "JetBrains Mono", monospace;
+  --chart-font-ui: 500 11px "Inter", sans-serif;
+  --crt-blur: blur(1.1px);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --n-0: #0d0e10;
+  --n-1: #121316;
+  --n-2: #17181b;
+  --n-3: #1c1e22;
+  --n-4: #24262b;
+  --n-5: #2d3036;
+  --n-6: #3a3e45;
+  --n-7: #555a63;
+  --n-8: #7c828c;
+  --n-9: #a2a8b0;
+  --n-10: #c8ccd2;
+  --n-11: #e3e5e8;
+  --n-12: #f5f6f7;
+
+  --bg-app: var(--n-0);
+  --bg-canvas: var(--n-1);
+  --bg-panel: var(--n-2);
+  --bg-raised: var(--n-3);
+  --bg-inset: var(--n-1);
+  --bg-hover: var(--n-4);
+  --bg-pressed: var(--n-5);
+  --bg-selected: #1d2a45;
+  --border: var(--n-4);
+  --border-strong: var(--n-6);
+  --text: var(--n-11);
+  --text-strong: var(--n-12);
+  --text-muted: var(--n-9);
+  --text-faint: #9097a1; /* ql-ui: was n-8, 3.69:1 on bg-selected; measured AA 4.5 */
+  --text-disabled: var(--n-7);
+  --border-input: #646a73; /* ql-ui: field boundary, 3:1 on panel and inset */
+
+  --accent: #6f97f5;
+  --accent-hover: #8aabf7;
+  --accent-pressed: #5a83e3;
+  --accent-solid: #3d6fe0;
+  --accent-solid-hover: #4c7beb;
+  --on-accent: #ffffff;
+  --accent-soft: #1c2a47;
+  --focus: #8aabf7;
+
+  --ok: #3cc29b;
+  --ok-soft: #12302a;
+  --warn: #e8a33a;
+  --warn-soft: #3a2a10;
+  --err: #f2774b;
+  --err-soft: #3d1c12;
+  --info: var(--accent);
+  --info-soft: var(--accent-soft);
+
+  --chart-grid: #222429;
+  --chart-axis: var(--n-8);
+  --chart-budget: #d9dce0;
+  --chart-draw: #56b4e9;
+  --chart-svc: #d58ab6;
+  --chart-behav: #e3d24a;
+  --chart-wait: #4a4f57;
+  --chart-over: var(--err);
+  --chart-cursor: var(--n-12);
+  --chart-select: rgba(111, 151, 245, 0.16);
+  --scrim: rgba(5, 6, 8, 0.6);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--n-5);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --n-0: #ffffff;
+  --n-1: #f7f8f9;
+  --n-2: #f1f2f4;
+  --n-3: #e8eaed;
+  --n-4: #dfe2e6;
+  --n-5: #d0d4da;
+  --n-6: #b4bac2;
+  --n-7: #8c939c;
+  --n-8: #6a717b;
+  --n-9: #4f5660;
+  --n-10: #343a42;
+  --n-11: #1d2127;
+  --n-12: #0e1115;
+
+  --bg-app: var(--n-1);
+  --bg-canvas: var(--n-0);
+  --bg-panel: var(--n-0);
+  --bg-raised: var(--n-0);
+  --bg-inset: var(--n-1);
+  --bg-hover: var(--n-2);
+  --bg-pressed: var(--n-3);
+  --bg-selected: #e7eefd;
+  --border: var(--n-4);
+  --border-strong: var(--n-5);
+  --text: var(--n-11);
+  --text-strong: var(--n-12);
+  --text-muted: var(--n-9);
+  --text-faint: #626973; /* ql-ui: was n-8, 4.24:1 on bg-selected */
+  --text-disabled: var(--n-6);
+  --border-input: #858c95; /* ql-ui: field boundary, 3:1 on panel and inset */
+
+  --accent: #2a5bd7;
+  --accent-hover: #2350c2;
+  --accent-pressed: #1d44a8;
+  --accent-solid: #2a5bd7;
+  --accent-solid-hover: #2350c2;
+  --on-accent: #ffffff;
+  --accent-soft: #e7eefd;
+  --focus: #2a5bd7;
+
+  --ok: #087559; /* ql-ui: was #0a7f61, 4.35:1 on ok-soft */
+  --ok-soft: #e1f4ee;
+  --warn: #9a5a00;
+  --warn-soft: #fbefd9;
+  --err: #b33a0a; /* ql-ui: was #c2410c, 4.34:1 on err-soft */
+  --err-soft: #fbe7df;
+  --info: var(--accent);
+  --info-soft: var(--accent-soft);
+
+  --chart-grid: #eceef1;
+  --chart-axis: var(--n-8);
+  --chart-budget: #343a42;
+  --chart-draw: #1f78b4;
+  --chart-svc: #a8457f;
+  --chart-behav: #8f7e00;
+  --chart-wait: #c4c9d0;
+  --chart-over: var(--err);
+  --chart-cursor: var(--n-12);
+  --chart-select: rgba(42, 91, 215, 0.10);
+  --scrim: rgba(14, 17, 21, 0.4);
+
+  --shadow-1: 0 1px 2px rgba(14, 17, 21, 0.06);
+  --shadow-2: 0 12px 32px rgba(14, 17, 21, 0.16), 0 0 0 1px var(--n-4);
+}
+
+/* In-game menu palettes: the console draws flat boxes and 8x16 glyphs only, at most 4 colours a page. */
+:root {
+  --dc-a-bg: #101418;
+  --dc-a-panel: #22303c;
+  --dc-a-text: #e8ecef;
+  --dc-a-accent: #f0a030;
+  --dc-b-bg: #000000;
+  --dc-b-bar: #1848a8;
+  --dc-b-text: #f0f0f0;
+  --dc-b-dim: #7890a8;
+  --dc-qr-dark: #000000;
+  --dc-qr-light: #f0f0f0;
+}

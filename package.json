@@ -1,0 +1,47 @@
+{
+  "name": "qalink-cloud",
+  "productName": "QA Link Cloud",
+  "private": true,
+  "version": "0.1.0",
+  "description": "QA Link Cloud: the developer workstation built on dc-qalink, as a Windows desktop app and a web page",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lamb2k/dc-qalink-cloud.git"
+  },
+  "homepage": "https://github.com/lamb2k/dc-qalink-cloud",
+  "bugs": "https://github.com/lamb2k/dc-qalink-cloud/issues",
+  "releaseChannel": "preview",
+  "main": "desktop/main.mjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run lint:tokens && npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint:tokens": "node tools/lint-tokens.mjs",
+    "test": "vitest run",
+    "contrast": "node tools/contrast.mjs",
+    "demo-session": "node tools/make-demo-session.mjs",
+    "bridge": "node tools/mock-bridge.mjs",
+    "mcp": "node tools/mock-mcp.mjs",
+    "check:edge": "node tools/edge-checks.mjs",
+    "icons": "node tools/pack-icons.mjs",
+    "app:icon": "node tools/edge-checks.mjs icon",
+    "app": "npm run build && electron .",
+    "app:capture": "node tools/desktop-capture.mjs",
+    "app:dist": "npm run build && node tools/build-desktop.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^45.4.1",
+    "lucide-static": "^0.460.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ws": "^8.23.0"
+  }
+}

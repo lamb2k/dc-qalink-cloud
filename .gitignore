@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+# private recordings never enter this repository (they live in ../private-data)
+private-data/
+*.private.jsonl
+.edge-profile/
+# build outputs: the app folder, zip and test pictures (npm run app:dist, app:capture)
+out/

@@ -1,0 +1,78 @@
+# QA Link Cloud desktop app (Windows)
+
+The same UI as the web page (`src/`, TypeScript, no framework), inside an Electron shell (`desktop/`). One code base:
+the UI asks `desktop()` (`src/platform/desktop.ts`) and shows desktop-only actions only when it answers.
+
+## Build and run
+```
+npm install
+npm run build                      # token lint, type check, web build (dist/)
+npx electron tools/make-icon.mjs   # once: build/icon.ico and icon.png from the brand mark
+npm run app                        # build and open the app from source (a visible window: for people, not tests)
+npm run app:dist                   # portable build: <out>/QA Link Cloud-win32-x64/ and a zip (unsigned, not published)
+npm run app:capture                # test mode: each case renders offscreen, captures itself and exits; no window
+```
+`tools/desktop-capture.mjs --packaged "<...>\QA Link Cloud.exe"` runs the same cases on the packaged app.
+
+## How it is put together
+- **The page** is served from a private `app://studio/` scheme (the web build), with a content security policy on
+  every response: scripts from the app only, connections only to the app and to `127.0.0.1` / `localhost` (the bridge).
+  Every request to anything else is cancelled; navigation away and new windows are refused; downloads are off (saving
+  goes through the system dialog); the only permission granted is writing to the clipboard.
+- **The window**: context isolation on, node integration off, sandbox on, web security on, no menu bar, devtools off
+  in the packaged app.
+- **The preload** (`desktop/preload.cjs`) exposes one object, `window.qalink`, and nothing else. The page never sees
+  `ipcRenderer`. **The main process** (`desktop/main.mjs`) checks every call: it comes from the app page, its arguments
+  have the right types, file kinds are on a list, sizes are under limits, settings keys are on a list.
+- **No paths or command lines from the page.** Files the user picks or drops become handles; the page reads, watches
+  and saves through them. Programs are started by id (`bridge`, `flycast`); their command lines live in the main process.
+
+## `window.qalink` (version 1)
+| Call | What |
+|---|---|
+| `info()` | app, Electron, Chromium and Node versions, data folder, how to launch the local MCP |
+| `openFiles(purpose, multi?)` | system Open dialog; purpose `session`, `build`, `asset`, `presets`, `padscript`, `loader` sets filters and limits; returns handles with bytes |
+| `readDropped(file, purpose)` | reads a file dropped on the window (its path comes from the browser's own File object) |
+| `reread(handle)`, `watch(handle)`, `unwatch(handle)`, `onFileChanged(cb)` | read again and watch a granted file (assets and presets reload when saved) |
+| `saveFile(purpose, name, data)` | system Save dialog, then write |
+| `networkInterfaces()` | this PC's interfaces, with `lan` on the one the console can reach (private IPv4, not virtual) |
+| `programs()`, `startProgram(id)`, `stopProgram(id)`, `onProgram(cb)` | the bridge and Flycast: state, pid, last lines |
+| `chooseFlycast()`, `prepareFlycast()` | pick flycast.exe with the system dialog; make the app's own Flycast settings folder |
+| `settings()`, `setSetting(key, value)` | `startBridgeOnLaunch`, `bridgeAddress` (local only), `mcpLocal` |
+
+## The bridge in the app
+The program `bridge` is **dc-qalink's real bridge** (Python, contract 1) when the app can find it, else the mock bridge
+(`tools/mock-bridge.mjs`, labelled "mock: dc-qalink's bridge not found"). Where it looks (`desktop/main.mjs`,
+`realBridge()`): `settings.json`'s `bridgeDir` (a dc-qalink checkout; the page cannot set it), else `QALINK_DCQALINK`,
+else the packaged `resources/bridge`. Which Python: `bridgePython`, else `QALINK_PYTHON`, else the packaged embeddable
+`resources/bridge/python/python.exe`, else the system `python`. `bridgeArgs` (settings.json only) adds the bridge's own
+options (`--selftest`, `--loader-disc`, `--files`). The command line is
+`<python> -I <dc-qalink>/pc/qalink_bridge.py --port 52080 --data <app data>/bridge [--mcp-http 52081]` (the HTTP MCP
+when "Local MCP" is on); the Agents snippets name the same script with `--mcp stdio`.
+The release zip bundles dc-qalink's `pc/` folder (a pinned commit, MIT) as `resources/bridge`, run with the
+**system Python 3.10+** (the bridge needs only the standard library; its MCP part needs `pip install mcp`). Build it
+with `npm run app:dist -- --bridge <dc-qalink checkout> --bridge-ref <commit>`; without `--bridge` the app ships the
+mock bridge only. Not yet done: the embeddable Python package, so the zip would need no Python at all.
+Plan for bundling Python too:
+1. The build fetches the official **Python embeddable package** for Windows x64 (about 11 MB, no installer, no
+   registry) once, checks its hash, and puts it in `resources/bridge/python/` with dc-qalink's bridge package beside it
+   (`resources/bridge/dc_qalink/`). No pip at run time: the bridge needs only the standard library; the MCP part brings
+   the Python MCP SDK as a vendored wheel.
+2. The program `bridge` becomes `resources/bridge/python/python.exe -I -m dc_qalink.bridge --port <port>`; the app
+   starts and stops it exactly as it does the mock today (by id, hidden, stopped by pid).
+3. Its local MCP is the same module with `--mcp stdio` (for Claude Code / Codex, which start it themselves) or
+   `--mcp http --port <n>` (when the app's "Local MCP" switch is on). The tool list it serves is the JSON export of
+   `src/data/mcp-tools.ts` (`node tools/gen-mcp-doc.mjs --json`), so the mock MCP server stays the reference.
+4. dc-qalink stays usable alone: the same bridge runs from a plain Python install with no app.
+
+## Flycast
+The app never edits the user's Flycast settings. `prepareFlycast()` writes the app's own `emu.cfg` (broadband adapter
+on) under the app's data folder and starts Flycast with `FLYCAST_CONFIG_DIR` / `FLYCAST_DATA_DIR` pointing there. To
+confirm against the Flycast build in use (dc-qalink's Flycast runs): that these variables are read, and the exact key
+names for the adapter.
+
+## Test mode
+`--capture-and-exit=<png>` with `--query=`, `--size=`, `--wait=`, `--metrics=`, `--start-bridge`, `--user-data=`,
+`--eval-b64=`: the window renders offscreen (it never appears and never takes focus), the page's own loop runs at full
+rate, `capturePage()` writes the PNG, the metrics file gets start time, memory and the page's console lines, and the
+app exits (time limit 45 s inside, 60 s outside by pid).
