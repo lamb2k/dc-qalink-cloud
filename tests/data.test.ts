@@ -189,3 +189,29 @@ describe('link loss (simulated in replay)', () => {
     expect(src.store.maxN).toBe(100);
   });
 });
+
+describe('row values the meta does not declare', () => {
+  it('keeps numbers, strings and small arrays, bounded, and drops them on a seek back', () => {
+    const st = new SessionStore(); st.append(meta);
+    st.append({ t: 'row', n: 1, ph: { draw: 4, frame: 33 }, x: { room: 0x101, pos: [1.5, 2, -3], area: 'test area' } });
+    st.append({ t: 'row', n: 2, ph: { draw: 4, frame: 33 }, x: { room: 0x102, pos: [1.5, 2, -3] } });
+    st.append({ t: 'row', n: 3, ph: { draw: 4, frame: 33 }, x: { room: 0x102, pos: [2, 2, -3] } });
+    expect(st.xFields()).toEqual([{ key: 'room', kind: 'num' }, { key: 'pos', kind: 'val' }, { key: 'area', kind: 'val' }]);
+    expect(st.xAt('room', 1)).toBe(0x101); expect(st.value('room', 3)).toBe(0x102);   // numeric: a column, plottable
+    expect(st.column('pos')).toBeUndefined();                                          // arrays are not plotted
+    expect(st.xAt('pos', 1)).toEqual([1.5, 2, -3]); expect(st.xAt('pos', 2)).toEqual([1.5, 2, -3]); expect(st.xAt('pos', 3)).toEqual([2, 2, -3]);
+    expect(st.xAt('area', 3)).toBe('test area');                                       // the last value sent holds
+    st.truncate(2);
+    expect(st.xAt('pos', 3)).toEqual([1.5, 2, -3]); expect(Number.isNaN(st.value('room', 3))).toBe(true);
+    // bounds: long strings and arrays are cut, objects and keys past the limit are counted, not kept
+    st.append({ t: 'row', n: 4, ph: { draw: 4, frame: 33 }, x: { area: 'a'.repeat(500), big: Array.from({ length: 100 }, (_, i) => i), obj: { a: 1 } as unknown as number } });
+    expect((st.xAt('area', 4) as string).length).toBe(64); expect((st.xAt('big', 4) as number[]).length).toBe(16);
+    expect(st.xDropped).toBe(1);
+    const x: Record<string, number> = {}; for (let i = 0; i < 40; i++) x['k' + i] = i;
+    st.append({ t: 'row', n: 5, ph: { draw: 4, frame: 33 }, x });
+    expect(st.xFields().length).toBe(32); expect(st.xDropped).toBe(1 + 40 - (32 - 4));
+    // declared extras still go to their column, and the store grows past its first capacity with dynamic columns
+    st.append({ t: 'row', n: 5000, ph: { draw: 4, frame: 33 }, x: { room: 7 } });
+    expect(st.value('room', 5000)).toBe(7); expect(st.xAt('room', 1)).toBe(0x101);
+  });
+});

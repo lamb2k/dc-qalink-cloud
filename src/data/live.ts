@@ -158,9 +158,9 @@ export class LiveSource extends Emitter implements Source {
     return this.fetchGrab({ t: 'grab', n: j.picture, w: j.width, h: j.height, fmt: 'png', url: ENDPOINTS.still(j.id), label: `grab ${j.id} (${j.tier})`, kind: 'console' } as GrabRecord);
   }
   async runs(): Promise<RunRecord[]> { return listRuns(this.base); }
-  async pushBuild(file: File | { name: string; bytes: Uint8Array }): Promise<RunRecord> {
+  async pushBuild(file: File | { name: string; bytes: Uint8Array }, opts: { args?: string } = {}): Promise<RunRecord> {
     const bytes = file instanceof File ? new Uint8Array(await file.arrayBuffer()) : file.bytes;
-    return pushProgram(this.base, file.name, bytes);
+    return pushProgram(this.base, file.name, bytes, { args: opts.args });
   }
   async readMemory(addr: number, len: number): Promise<MemoryReadResult> {
     const r = await this.fetchFn(this.url(ENDPOINTS.memoryRead), { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Contract': String(CONTRACT) }, body: JSON.stringify({ addr, len }) });

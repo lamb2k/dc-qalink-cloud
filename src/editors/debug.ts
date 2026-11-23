@@ -19,7 +19,14 @@ const stateIcon = (s: RunRecord['state']) => (s === 'passed' ? 'circle-check' : 
 class Runs implements Editor {
   el = h('div'); bodyClass = 'scroll'; tools: HTMLElement[]; private built = ''; private tick = 0;
   private input = h('input', { type: 'file', class: 'sr-only', accept: '.elf,.bin' });
+  // push arguments: kept outside the rebuilt list so typing is never interrupted; remembered per program file
+  private argsLabel = h('label', { class: 'l', for: 'run-args' });
+  private args = h('input', { id: 'run-args', class: 'input mono', type: 'text', spellcheck: 'false', autocomplete: 'off', placeholder: 'none', maxlength: '500' }) as HTMLInputElement;
+  private argsProg = '';
+  private list = h('div');
   constructor(private app: App) {
+    this.args.addEventListener('input', () => app.setArgsFor(this.argsProg, this.args.value));
+    this.el.append(h('div', { class: 'run-args' }, this.argsLabel, this.args), this.list);
     this.tools = [toolBtn('rocket', 'Push a build and run it (Ctrl U)', () => this.input.click()), toolBtn('refresh-cw', 'Refresh', () => { void refreshRuns(app, true).then(() => { this.built = ''; }); })];
     this.input.addEventListener('change', async () => { const f = this.input.files?.[0]; if (f) { await app.pushBuild(f); await refreshRuns(app, true); this.built = ''; } this.input.value = ''; });
   }
@@ -40,7 +47,11 @@ class Runs implements Editor {
     t.innerHTML = `<thead><tr><th>Run</th><th>Build</th><th>Device</th><th>State</th><th class="num">When</th></tr></thead><tbody>${list.map((r) =>
       `<tr class="click${r.id === this.app.view.run ? ' is-selected' : ''}" data-id="${esc(r.id)}" tabindex="0"><td class="mono">${esc(r.id)}</td><td><span class="ellipsis" title="${esc(r.file)} · ${int(r.bytes)} B · ${esc(r.sha256)}">${esc(r.file)}</span></td><td><span class="ellipsis" title="${esc(r.device)}">${esc(r.device)}</span></td><td><span class="pill ${stateKind(r.state)}">${iconSvg(stateIcon(r.state), 16, r.state === 'running' || r.state === 'pushing' ? 'spin' : '')}${r.state}</span></td><td class="num muted" title="${esc(r.queuedAt)}">${esc(r.queuedAt.slice(11, 16))}</td></tr>`).join('')}</tbody>`;
     t.querySelectorAll<HTMLElement>('tr[data-id]').forEach((tr) => { const go = () => this.app.view.set('run', tr.dataset.id!); tr.addEventListener('click', go); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); }); });
-    this.el.replaceChildren(drop, list.length ? t : empty('rocket', 'No runs yet', 'Push a build to run it on the linked device.'), this.input);
+    this.argsProg = list.find((r) => r.id === this.app.view.run)?.file ?? '';
+    this.argsLabel.textContent = this.argsProg ? `Arguments for ${this.argsProg}` : 'Arguments for the next push';
+    this.args.title = 'Sent with each push of this program; the loader hands them to it (the MCP push takes the same args)';
+    if (document.activeElement !== this.args) this.args.value = this.app.argsFor(this.argsProg);
+    this.list.replaceChildren(drop, list.length ? t : empty('rocket', 'No runs yet', 'Push a build to run it on the linked device.'), this.input);
   }
 }
 
@@ -54,7 +65,7 @@ class RunReport implements Editor {
     if (!r) { this.el.replaceChildren(empty('file-text', 'No run selected', 'Pick a run in Runs to read its report.')); return; }
     const rep = r.report;
     let html = `<div class="row"><span class="pill ${stateKind(r.state)}">${iconSvg(stateIcon(r.state))}${r.state}</span><span class="strong ellipsis" title="${esc(r.file)}">${esc(r.file)}</span><span class="grow"></span><span class="muted" style="font-size:var(--fs-xs)">by ${esc(r.by)}</span></div>
-      <dl class="props"><dt>Device</dt><dd title="${esc(r.device)}">${esc(r.device)}</dd><dt>Size</dt><dd>${int(r.bytes)} B</dd><dt>SHA-256</dt><dd title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 16))}...</dd><dt>Queued</dt><dd>${esc(r.queuedAt.replace('T', ' ').slice(0, 19))}</dd>${r.endedAt ? `<dt>Ended</dt><dd>${esc(r.endedAt.replace('T', ' ').slice(0, 19))}</dd>` : ''}</dl>`;
+      <dl class="props"><dt>Device</dt><dd title="${esc(r.device)}">${esc(r.device)}</dd><dt>Size</dt><dd>${int(r.bytes)} B</dd><dt>SHA-256</dt><dd title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 16))}...</dd><dt>Arguments</dt><dd class="mono" title="${esc(r.args ?? '')}">${r.args ? esc(r.args) : '<span class="faint">none</span>'}</dd><dt>Queued</dt><dd>${esc(r.queuedAt.replace('T', ' ').slice(0, 19))}</dd>${r.endedAt ? `<dt>Ended</dt><dd>${esc(r.endedAt.replace('T', ' ').slice(0, 19))}</dd>` : ''}</dl>`;
     if (!rep) html += `<div class="muted">${r.state === 'queued' ? 'Waiting for the device.' : 'Running; the report appears when it ends.'}</div>`;
     else {
       html += `<div class="section-title">${iconSvg('file-text')}Report · <span class="faint">${esc(rep.tier)}</span></div><dl class="props"><dt>Exit</dt><dd class="${rep.exit ? 'over' : ''}">${rep.exit ?? 'none (crashed)'}</dd><dt>Seconds</dt><dd>${rep.seconds}</dd><dt>Pictures</dt><dd>${int(rep.pictures)}</dd>${rep.numbers.map((n) => `<dt>${esc(n.label)}</dt><dd>${n.value.toFixed(2)} ${esc(n.unit)}</dd>`).join('')}</dl>`;

@@ -53,7 +53,10 @@ describe('LiveSource with the mock bridge', () => {
     const run = await src.pushBuild({ name: 'example.elf', bytes });
     expect(run.state).toBe('queued'); expect(run.bytes).toBe(bytes.length);
     expect(run.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
-    const runs = await src.runs(); expect(runs[0].id).toBe(run.id);
+    const runs = await src.runs(); expect(runs[0].id).toBe(run.id); expect(runs[0].args).toBe('');
+    const withArgs = await src.pushBuild({ name: 'example.elf', bytes }, { args: 'level=2 diag=1' });
+    expect(withArgs.args).toBe('level=2 diag=1');
+    expect((await src.runs()).find((x) => x.id === withArgs.id)?.args).toBe('level=2 diag=1');
     await expect(src.readMemory(0x8c010100, 16)).rejects.toThrow(/not in this loader/); // 501 until plan L5
     src.stop();
   }, 15000);

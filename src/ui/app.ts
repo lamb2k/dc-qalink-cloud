@@ -403,8 +403,17 @@ export class App implements LayoutHost {
       { id: 'memory.goto', title: 'Memory: go to address...', group: 'Debug', icon: 'binary', ask: { label: 'Address (hex)', placeholder: '8C010000', parse: (v) => { const n = parseInt(v.replace(/^0x/i, ''), 16); return Number.isNaN(n) ? undefined : n; } }, run: (a) => { this.setWorkspace('debug'); this.view.set('memAddr', a as number); } },
     );
   }
+  /** Push arguments, remembered per program file name (newest last, at most 50 names). */
+  private pushArgs: [string, string][] = store('pushArgs', []);
+  /** the next push's arguments: the ones remembered for this file, else the ones last typed for a new file */
+  argsFor(name: string): string { return this.pushArgs.find(([n]) => n === name)?.[1] ?? store('pushArgsNew', ''); }
+  setArgsFor(name: string, args: string): void {
+    if (!name) { save('pushArgsNew', args); return; }
+    this.pushArgs = [...this.pushArgs.filter(([n]) => n !== name), [name, args] as [string, string]].slice(-50); save('pushArgs', this.pushArgs); save('pushArgsNew', args);
+  }
   async pushBuild(f: File | { name: string; bytes: Uint8Array }): Promise<void> {
-    try { const r = await this.source.pushBuild(f); this.view.set('run', r.id); this.toast('info', `Pushed ${r.file}`, `${r.bytes.toLocaleString('en-GB')} B, sha256 ${r.sha256.slice(0, 12)}, ${r.state}`); }
+    const args = this.argsFor(f.name); this.setArgsFor(f.name, args);
+    try { const r = await this.source.pushBuild(f, { args }); this.view.set('run', r.id); this.toast('info', `Pushed ${r.file}`, `${r.bytes.toLocaleString('en-GB')} B, sha256 ${r.sha256.slice(0, 12)}, ${r.state}${args ? `, arguments: ${args}` : ''}`); }
     catch (e) { this.toast('err', 'Push failed', String(e)); }
   }
   private nextOver(): void {

@@ -66,7 +66,9 @@ export interface MetaRecord {
   /** version 2: the build this session ran (absent in version 1 and for programs started on the console) */
   build?: BuildRecord;
 }
-export interface RowRecord { t: 'row'; n: number; ph: Record<string, number>; f?: number; x?: Record<string, number> }
+/** A row's extra value: a number, a short string or a small array of numbers (a position, say). */
+export type XValue = number | string | number[];
+export interface RowRecord { t: 'row'; n: number; ph: Record<string, number>; f?: number; x?: Record<string, XValue> }
 export interface CounterRecord { t: 'ctr'; n: number; v: Record<string, number> }
 export type LogLevel = 'info' | 'warn' | 'err' | 'stub';
 export interface LogRecord { t: 'log'; n: number | null; lv: LogLevel; ph?: 'load' | 'play'; msg: string }

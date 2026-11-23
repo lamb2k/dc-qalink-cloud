@@ -45,7 +45,8 @@ export interface Source {
   grab(atN: number): Promise<GrabRecord | null>;
   command(c: CommandRequest): Promise<CommandResult>;
   runs(): Promise<RunRecord[]>;
-  pushBuild(file: File | { name: string; bytes: Uint8Array }): Promise<RunRecord>;
+  /** push a build; `args` reach the program through the loader (the same field as the MCP push's args) */
+  pushBuild(file: File | { name: string; bytes: Uint8Array }, opts?: { args?: string }): Promise<RunRecord>;
   readMemory(addr: number, len: number, atN: number): Promise<MemoryReadResult>;
 }
 
@@ -186,7 +187,7 @@ export class ReplaySource extends Emitter implements Source {
     return { ok: c.cmd === 'pause' || c.cmd === 'resume' || c.cmd === 'step', id: `replay-${Date.now()}`, error: c.cmd === 'warp' ? 'replay: a recording cannot warp' : undefined };
   }
   runs(): Promise<RunRecord[]> { return this.runsMock.list(); }
-  pushBuild(file: File | { name: string; bytes: Uint8Array }): Promise<RunRecord> { return this.runsMock.push(file, () => this.emit('state')); }
+  pushBuild(file: File | { name: string; bytes: Uint8Array }, opts: { args?: string } = {}): Promise<RunRecord> { return this.runsMock.push(file, () => this.emit('state'), opts.args ?? ''); }
   async readMemory(addr: number, len: number, atN: number): Promise<MemoryReadResult> { return mockMemory(addr, len, atN); }
 }
 
@@ -241,11 +242,11 @@ export class MockRunner {
     ];
   }
   async list(): Promise<RunRecord[]> { return this.list_.slice(); }
-  async push(file: File | { name: string; bytes: Uint8Array }, changed: () => void): Promise<RunRecord> {
+  async push(file: File | { name: string; bytes: Uint8Array }, changed: () => void, args = ''): Promise<RunRecord> {
     const bytes = file instanceof File ? new Uint8Array(await file.arrayBuffer()) : file.bytes;
     const sha = await sha256Hex(bytes);
     const id = `r-${String(8 + this.list_.length - 3).padStart(4, '0')}`;
-    const run: RunRecord = { id, file: file.name, bytes: bytes.length, sha256: sha, device: 'Flycast, this PC', state: 'queued', queuedAt: new Date().toISOString(), by: 'you' };
+    const run: RunRecord = { id, file: file.name, bytes: bytes.length, sha256: sha, device: 'Flycast, this PC', state: 'queued', queuedAt: new Date().toISOString(), by: 'you', args };
     this.list_.unshift(run);
     const steps: [number, RunRecord['state']][] = [[600, 'pushing'], [1600, 'running'], [4200, 'passed']];
     for (const [t, st] of steps) setTimeout(() => {

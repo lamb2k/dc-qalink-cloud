@@ -230,6 +230,8 @@ export interface RunRecord {
   /** the bridge's own word for the state (done, timeout, reset, lost, refused ...) */
   bridgeState?: C1RunState;
   error?: string;
+  /** the arguments the program was pushed with (the loader hands them to it) */
+  args?: string;
 }
 export function uiRunState(s: C1RunState, exit: number | null | undefined): RunState {
   switch (s) {
@@ -248,7 +250,7 @@ export function uiRun(r: C1Run): RunRecord {
   if (r.state === 'timeout' || r.state === 'reset' || r.state === 'lost' || r.state === 'refused') notes.unshift(`The bridge says: ${r.state}${r.way_back ? `, back through the ${r.way_back}` : ''}.`);
   const report: RunReport | undefined = sm ? { exit: sm.exit, seconds: sm.seconds, pictures: sm.pictures, numbers: sm.numbers, tier: sm.tier, notes, crash: sm.crash ? { pc: sm.crash.pc, pr: sm.crash.pr, symbol: `event ${sm.crash.event}` } : undefined }
     : r.error ? { exit: null, seconds: r.times.run_s ?? 0, pictures: 0, numbers: [], tier: r.tier, notes } : undefined;
-  return { id: r.id, file: r.program.name, bytes: r.program.bytes, sha256: r.program.sha256, device: r.device, state: uiRunState(r.state, sm?.exit), queuedAt: r.queued_at, endedAt: r.ended_at ?? undefined, by: r.by, report, bridgeState: r.state, error: r.error ?? undefined };
+  return { id: r.id, file: r.program.name, bytes: r.program.bytes, sha256: r.program.sha256, device: r.device, state: uiRunState(r.state, sm?.exit), queuedAt: r.queued_at, endedAt: r.ended_at ?? undefined, by: r.by, report, bridgeState: r.state, error: r.error ?? undefined, args: r.args ?? '' };
 }
 
 export interface MemoryReadRequest { addr: number; len: number }
