@@ -30,7 +30,7 @@ Code or Codex can drive the console through MCP.
 ## Quick start
 
 **From the release zip**
-1. Download `DC-QA-Link-Cloud-0.2.0-preview-win-x64.zip` from
+1. Download `DC-QA-Link-Cloud-0.2.1-preview-win-x64.zip` from
    [Releases](https://github.com/lamb2k/dc-qalink-cloud/releases) and check it against `SHA256SUMS`.
 2. Unzip anywhere and run `DC QA Link Cloud.exe`. It is portable and unsigned, so Windows SmartScreen may ask once.
 3. The first run opens **Set up a console**. Skip it to explore the built-in demo session.
