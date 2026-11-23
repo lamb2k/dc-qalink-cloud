@@ -3,6 +3,8 @@ import { openDialog } from '../ui/dialog';
 // Replay uses a mock runner and mock memory; live speaks the bridge's /runs and /memory/read.
 import type { App } from '../ui/app';
 import type { RunRecord } from '../data/bridge-api';
+import { MEMORY_UNSUPPORTED_TEXT, MemoryUnsupportedError } from '../data/source';
+import { onSourceChange } from '../data/scope';
 import { esc, h, iconSvg, int, num } from '../ui/dom';
 import { btn, empty, toolBtn, Watch, type Editor, type EditorDef } from './base';
 
@@ -82,6 +84,8 @@ class RunReport implements Editor {
 
 /** memory read at the playhead, cached per (address, picture) */
 const memCache = new Map<string, Uint8Array>();
+// a new source starts with no runs and no memory read from the one before (data/scope.ts)
+onSourceChange(() => { runsCache.list = []; runsCache.at = 0; runsCache.src = null; memCache.clear(); });
 async function readMem(app: App, addr: number, len: number, n: number): Promise<Uint8Array> {
   const k = `${addr}|${len}|${n}|${app.source.kind}`; const c = memCache.get(k); if (c) return c;
   const r = await app.source.readMemory(addr, len, n); const s = atob(r.data); const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
@@ -109,12 +113,13 @@ class Memory implements Editor {
   meta(): string { return `${hx(this.app.view.memAddr, 8)} + 64 KB · picture ${this.app.view.playhead}${this.app.source.kind === 'live' ? '' : ' · mock memory'}`; }
   frame(force: boolean): void {
     const base = this.app.view.memAddr; const n = this.app.view.playhead; const k = `${base}|${n}|${this.app.source.kind}`;
-    if (k !== this.loaded) {
+    if (k !== this.loaded && this.app.source.memorySupported !== false) {
       this.loaded = k;
-      void Promise.all([readMem(this.app, base, this.SPAN, n), readMem(this.app, base, this.SPAN, Math.max(0, n - 1))]).then(([d, p]) => { this.data = d; this.prev = p; this.v++; }).catch((e) => { this.data = null; this.app.toast('err', 'Memory read failed', String(e)); });
+      void Promise.all([readMem(this.app, base, this.SPAN, n), readMem(this.app, base, this.SPAN, Math.max(0, n - 1))]).then(([d, p]) => { this.data = d; this.prev = p; this.v++; }).catch((e) => { this.data = null; this.v++; if (!(e instanceof MemoryUnsupportedError)) this.app.toast('err', 'Memory read failed', String(e)); });
     }
     if (!this.w.changed(this.app, String(this.v)) && !force) return;
     if (this.app.source.kind === 'idle') { this.rows.replaceChildren(empty('binary', 'No console linked', 'Memory reads need a linked console or a recording.')); return; }
+    if (this.app.source.memorySupported === false) { this.spacer.style.height = ''; this.rows.style.transform = ''; this.rows.replaceChildren(empty('binary', 'Not in this version of QA Link', MEMORY_UNSUPPORTED_TEXT)); return; }
     const rh = num('--lh-sm'); const total = this.SPAN / 16; this.spacer.style.height = `${total * rh}px`;
     const top = this.list.scrollTop, H = this.list.clientHeight; const a = Math.max(0, Math.floor(top / rh) - 4), b = Math.min(total, Math.ceil((top + H) / rh) + 4);
     this.rows.style.transform = `translateY(${a * rh}px)`;
@@ -157,13 +162,14 @@ class WatchList implements Editor {
   meta(): string { return `${watches.length} values at picture ${this.app.view.playhead}`; }
   frame(): void {
     const n = this.app.view.playhead; const k = `${n}|${watches.length}|${this.app.source.kind}`;
-    if (k !== this.loaded) {
+    if (k !== this.loaded && this.app.source.memorySupported !== false) {
       this.loaded = k;
       void Promise.all(watches.map(async (w) => { const [c, p] = await Promise.all([readMem(this.app, w.addr, 4, n), readMem(this.app, w.addr, 4, Math.max(0, n - 1))]); const dv = (b: Uint8Array) => new DataView(b.buffer); const rd = (b: Uint8Array) => (b.length < 4 ? null : w.type === 'f32' ? dv(b).getFloat32(0, true) : w.type === 'u16' ? dv(b).getUint16(0, true) : dv(b).getUint32(0, true)); return [rd(c), rd(p)]; }))
-        .then((v) => { this.vals = v; this.v++; }).catch(() => {});
+        .then((v) => { this.vals = v; this.v++; }).catch(() => { this.v++; });
     }
     const sk = `${this.v}|${this.app.themeV}`; if (sk === this.shown) return; this.shown = sk;
     if (this.app.source.kind === 'idle') { this.el.replaceChildren(empty('eye', 'No console linked', 'Watched values read memory at the playhead.')); return; }
+    if (this.app.source.memorySupported === false) { this.el.replaceChildren(empty('eye', 'Not in this version of QA Link', MEMORY_UNSUPPORTED_TEXT)); return; }
     this.el.innerHTML = `<table class="table dense"><thead><tr><th>Name</th><th>Address</th><th class="num">Value</th><th class="num">Change</th></tr></thead><tbody>${watches.map((w, i) => {
       const [c, p] = this.vals[i] ?? [null, null]; const d = c != null && p != null ? c - p : null;
       return `<tr><td><span class="ellipsis" title="${esc(w.name)} (${w.type})">${esc(w.name)}</span></td><td class="mono muted" title="${w.type}">${hx(w.addr, 8)}</td><td class="num">${c == null ? '-' : w.type === 'u32' && c > 0x80000000 ? '0x' + hx(c, 8) : int(c)}</td><td class="num${d ? '' : ' muted'}" style="${d ? 'color:var(--warn)' : ''}">${d == null ? '-' : d === 0 ? '0' : (d > 0 ? '+' : '') + int(d)}</td></tr>`;

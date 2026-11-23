@@ -5,7 +5,8 @@ import { BRIDGE_API_VERSION, ENDPOINTS, uiDevice, type C1Device, type DeviceInfo
 import { bget, DEFAULT_BRIDGE } from '../data/bridge-client';
 import { SESSION_FORMAT_VERSION } from '../data/format';
 import { MCP_TOOLS, MCP_TOOLS_VERSION } from '../data/mcp-tools';
-import { desktop, type AppInfo, type AppSettings, type BuildsInfo, type Connection, type NetIf, type ProgramStatus } from '../platform/desktop';
+import { desktop, type AppInfo, type AppSettings, type BuildsInfo, type Connection, type NetIf, type ProgramStatus, type PythonInfo } from '../platform/desktop';
+import { BeaconWatch, FIREWALL_HELP, firewallSuspect } from '../data/firewall';
 import { MODEM_NO_DISC } from './setup';
 import { esc, h, iconSvg, save, store } from '../ui/dom';
 import { btn, empty } from '../editors/base';
@@ -47,14 +48,19 @@ export class SettingsPage implements Page {
   private info: AppInfo | null = null; private settings: AppSettings | null = null; private progs: ProgramStatus[] = []; private nets: NetIf[] = [];
   private devices: DeviceInfo[] | null = null; private devFor = ''; private builds: BuildsInfo | null = null;
   private off: (() => void) | null = null;
+  private py: PythonInfo | null = null; private fw: { known: boolean; allowed: boolean; exe: string } | null = null;
+  private beacons = new BeaconWatch(() => this.app.bridgeUrl, () => { this.v++; });
   constructor(private app: App) {
     const q = desktop();
     if (q) {
       void Promise.all([q.info(), q.settings(), q.programs(), q.networkInterfaces(), q.builds()]).then(([i, s, p, n, b]) => { this.info = i; this.settings = s; this.progs = p; this.nets = n; this.builds = b; this.v++; });
       this.off = q.onProgram((s) => { this.progs = this.progs.map((x) => (x.id === s.id ? s : x)); this.v++; });
+      void q.bridgePython().then((p) => { this.py = p; this.v++; }).catch(() => {});
+      void q.firewallCheck().then((f) => { this.fw = f; this.v++; }).catch(() => {});
+      this.beacons.start();
     }
   }
-  destroy(): void { this.off?.(); }
+  destroy(): void { this.off?.(); this.beacons.stop(); }
   private async loadDevices(): Promise<void> {
     const k = `${this.app.source.kind}|${this.app.source.state}`; if (k === this.devFor) return; this.devFor = k;
     try { this.devices = (await bget<{ devices: C1Device[] }>(this.app.bridgeUrl, ENDPOINTS.devices, 1500)).devices.map(uiDevice).filter((d): d is DeviceInfo => !!d); } catch { this.devices = null; }
@@ -144,10 +150,31 @@ export class SettingsPage implements Page {
       body.append(h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'Dreamcast on the network'), h('div', { class: 'd' }, 'Off: the bridge talks only to Flycast on this PC, and a console it hears is listed but never sent anything. Turn on to link a real Dreamcast. Tests and agents that start their own bridge keep it off.')), h('div', { class: 'ctl' }, lanSw)));
       const acSw = switchEl(this.settings?.autoconnect !== false, 'Link by itself', async (v) => { this.settings = await q.setSetting('autoconnect', v); this.v++; });
       body.append(h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'Link by itself'), h('div', { class: 'd' }, 'Links to a console linked before (or the only one heard) when its loader beacons, and again when it comes back from a run or a reboot, on a new address too.')), h('div', { class: 'ctl' }, acSw)));
+      body.append(...this.bridgeRows(q));
       if (this.settings?.flycastPrepared) body.append(h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'Flycast settings for the app'), h('div', { class: 'd mono' }, this.settings.flycastPrepared)), h('div', { class: 'ctl' }, h('span', { class: 'pill ok' }, 'own copy'))));
     }
     return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('server') }, h('h2', null, 'Bridge and Flycast'), h('span', { class: 'meta' }, 'programs on this PC')), body,
       h('div', { class: 'card-foot' }, h('span', null, 'The bridge is dc-qalink\'s (contract 1) when the app finds it, else the mock bridge.')));
+  }
+
+  /** Python for the bridge, Windows Firewall (with the silent-drop check) and the run deadline */
+  private bridgeRows(q: NonNullable<ReturnType<typeof desktop>>): HTMLElement[] {
+    const row = (l: string, d: string | HTMLElement, ...ctl: (HTMLElement | string)[]) => h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, l), typeof d === 'string' ? h('div', { class: 'd' }, d) : d), h('div', { class: 'ctl' }, ...ctl));
+    const py = this.py;
+    const pyRow = row('Python for the bridge', h('div', { class: 'd mono', title: py?.python ?? '' }, py ? `${py.python || 'not found'} (${py.chosen ? 'chosen here' : py.fromEnv ? 'from QALINK_PYTHON' : py.label})` : '...'),
+      btn('Choose python.exe', async () => { this.py = await q.chooseBridgePython(); this.fw = await q.firewallCheck(); this.v++; }, { small: true, icon: 'folder-open' }),
+      btn('Use the default', async () => { this.py = await q.defaultBridgePython(); this.fw = await q.firewallCheck(); this.v++; }, { small: true, disabled: !py?.chosen }));
+    const s = this.app.source;
+    const suspect = firewallSuspect({ connection: this.settings?.connection ?? '', lanAllowed: !!this.settings?.consoleOnNetwork, listeningS: this.beacons.listeningS, consolesHeard: this.beacons.consolesHeard,
+      linkedToConsole: s.kind === 'live' && s.state === 'linked' && /Dreamcast/.test(s.info.device ?? ''), ruleKnown: !!this.fw?.allowed });
+    const fwPill = h('span', { html: !this.fw?.known ? `<span class="pill">${iconSvg('circle')}not checked</span>` : this.fw.allowed ? `<span class="pill ok">${iconSvg('circle-check')}allowed</span>` : `<span class="pill warn">${iconSvg('triangle-alert')}no rule</span>` });
+    const fwRow = row('Windows Firewall', h('div', null, h('div', { class: 'd' }, "The console reaches the bridge over UDP. If Windows never asked about the bridge's Python, allow it here: one inbound UDP rule, Private networks only. Windows asks for an administrator's yes first."),
+      ...(suspect ? [h('div', { class: 'callout warn', 'data-firewall': 'suspect', html: iconSvg('shield') }, h('p', null, FIREWALL_HELP))] : [])),
+      fwPill, btn('Allow through Windows Firewall', async () => { const r = await q.firewallAllow(); this.app.toast(r.ok ? 'ok' : 'warn', r.ok ? 'Firewall rule added' : 'Firewall unchanged', r.message); this.fw = await q.firewallCheck(); this.v++; }, { small: true, icon: 'shield', primary: suspect, disabled: !!this.fw?.allowed }));
+    const dl = h('input', { class: 'input mono', type: 'text', inputmode: 'numeric', placeholder: 'none', value: this.settings?.runDeadline ?? '', 'aria-label': 'Run deadline in seconds', style: 'width:var(--s-16)' }) as HTMLInputElement;
+    dl.addEventListener('change', async () => { const v = dl.value.trim(); if (!/^(|[1-9]\d{0,5})$/.test(v)) { dl.classList.add('is-error'); return; } dl.classList.remove('is-error'); this.settings = await q.setSetting('runDeadline', v); this.app.toast('ok', v ? `Pushed runs end after ${v} s` : 'Pushed runs have no deadline'); });
+    const dlRow = row('Run deadline (seconds)', 'Empty: none, a run lasts as long as you play. A number: the loader ends the run after that long.', dl);
+    return [pyRow, fwRow, dlRow];
   }
 
   private agentsCard(): HTMLElement {
@@ -167,7 +194,7 @@ export class SettingsPage implements Page {
     t.innerHTML = `<thead><tr><th>Interface</th><th>Address</th><th>Kind</th></tr></thead><tbody>${this.nets.filter((n) => n.family === 'IPv4').map((n) => `<tr${n === lan ? ' class="is-selected"' : ''}><td><span class="ellipsis" title="${esc(n.name)}">${esc(n.name)}</span></td><td class="mono">${esc(n.address)}</td><td>${n === lan ? `<span class="pill ok">${iconSvg('check')}local network</span>` : n.internal ? '<span class="pill">this PC only</span>' : n.virtual ? '<span class="pill">virtual</span>' : '<span class="pill">other</span>'}</td></tr>`).join('')}</tbody>`;
     return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('network') }, h('h2', null, 'This PC\'s network'), h('span', { class: 'meta' }, q ? (lan ? `console side: ${lan.address}` : 'no local network found') : '')),
       h('div', { class: 'card-body flush' }, q ? t : empty('network', 'In the desktop app', 'The desktop app lists this PC\'s network interfaces and picks the one the console can reach.')),
-      h('div', { class: 'card-foot' }, h('span', null, 'The app changes no firewall settings.')));
+      h('div', { class: 'card-foot' }, h('span', null, 'The app changes the firewall only when you press Allow, and Windows asks first.')));
   }
 
   private appearanceCard(): HTMLElement {

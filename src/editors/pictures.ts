@@ -1,5 +1,6 @@
 // Picture helpers: fit a grab to an area, read pixels, difference two grabs, the loupe, and a tiny renderer for Assets.
 import { tok } from '../ui/dom';
+import { onSourceChange } from '../data/scope';
 
 export interface Fit { s: number; dx: number; dy: number; w: number; h: number }
 export type FitMode = 'fit' | 'fill' | 'one';
@@ -34,6 +35,7 @@ export const rgb565 = (p: number[]): number => ((p[0] >> 3) << 11) | ((p[1] >> 2
 
 export interface Diff { cv: HTMLCanvasElement; changed: number; pct: number; mean: number; max: number }
 const diffCache = new Map<string, Diff>();
+onSourceChange(() => diffCache.clear());
 /** per-pixel mean absolute difference; over the threshold shows in the warning colour, under it as dim grey */
 export function difference(a: HTMLCanvasElement, b: HTMLCanvasElement, thr: number, key: string): Diff {
   const k = `${key}|${thr}|${tok('--warn')}`; const c = diffCache.get(k); if (c) return c;

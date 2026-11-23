@@ -28,6 +28,7 @@
     "check:edge": "node tools/edge-checks.mjs",
     "icons": "node tools/pack-icons.mjs",
     "app:icon": "node tools/edge-checks.mjs icon",
+    "check:boundary": "node tools/source-boundary.mjs",
     "app": "npm run build && electron .",
     "app:capture": "node tools/desktop-capture.mjs",
     "app:dist": "npm run build && node tools/build-desktop.mjs"

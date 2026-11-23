@@ -175,3 +175,10 @@ button { font: inherit; }
 .mon-foot { font-size: var(--fs-xs); color: var(--text-muted); }
 .xspark { display: inline-block; width: var(--s-16); height: var(--s-4); margin-left: var(--s-2); vertical-align: middle; }
 .xspark path { fill: none; stroke: var(--chart-wait); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+/* the source badge (data/scope.ts): always in the header and the status bar, so demo and live never look alike */
+.src-badge { display: inline-flex; align-items: center; height: var(--s-5); padding: 0 var(--s-2); border-radius: var(--r-full); font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap; max-width: var(--w-field); overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); background: var(--bg-hover); }
+.src-badge.demo { color: var(--warn); background: var(--warn-soft); }
+.src-badge.live { color: var(--ok); background: var(--ok-soft); }
+.src-badge.recording { color: var(--info); background: var(--info-soft); }
+.ws-top .src-badge, .ws-status .src-badge { flex: none; }
+.ws-top .src-badge { margin-right: var(--s-2); }

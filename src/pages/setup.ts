@@ -11,6 +11,7 @@ import { bbytes, bget, bpost, pushProgram, sendCommand } from '../data/bridge-cl
 import { desktop, type AppInfo, type BuildsInfo, type Connection, type NetIf, type ProgramStatus } from '../platform/desktop';
 import { download, esc, h, iconSvg, save, store } from '../ui/dom';
 import { btn } from '../editors/base';
+import { FIREWALL_HELP, firewallSuspect } from '../data/firewall';
 import { deskOnly, mcpSnippets, snippet, switchEl } from './settings';
 import type { Page } from './page';
 
@@ -48,14 +49,17 @@ export class SetupPage implements Page {
   private bump(): void { this.v++; live.v++; }
   private offProg: (() => void) | null = null;
   private builds: BuildsInfo | null = null;
+  // the silent firewall check (data/firewall.ts): since when the bridge listens, consoles it heard, LAN allowed, rule known
+  private listenSince = 0; private consolesHeard = 0; private lanOn = false; private fwAllowed = false;
   constructor(private app: App, at?: StepId) {
     this.s = setupState(); if (!this.s.kind) this.s.kind = this.s.flycast && !this.s.console ? 'flycast' : this.s.transport;
     if (at && TITLES[at]) this.s.step = at;
     if (!this.steps().includes(this.s.step)) this.s.step = 'welcome';
     const q = desktop();
     if (q) {
-      void Promise.all([q.info(), q.networkInterfaces(), q.programs(), q.settings(), q.builds()]).then(([i, n, p, st, b]) => { this.info = i; this.nets = n; this.fly = p.find((x) => x.id === 'flycast') ?? null; this.flyDir = st.flycastPrepared; this.mcpOn = st.mcpLocal; this.builds = b; this.bump(); });
+      void Promise.all([q.info(), q.networkInterfaces(), q.programs(), q.settings(), q.builds()]).then(([i, n, p, st, b]) => { this.info = i; this.nets = n; this.fly = p.find((x) => x.id === 'flycast') ?? null; this.lanOn = !!st.consoleOnNetwork; this.flyDir = st.flycastPrepared; this.mcpOn = st.mcpLocal; this.builds = b; this.bump(); });
       this.offProg = q.onProgram((p) => { if (p.id === 'flycast') { this.fly = p; this.bump(); } });
+      void q.firewallCheck().then((f) => { this.fwAllowed = f.allowed; }).catch(() => {});
     }
     this.poll = window.setInterval(() => { if (this.s.step === 'find') void this.discover(); }, 1000);
     if (this.s.step === 'find') void this.discover();
@@ -87,6 +91,10 @@ export class SetupPage implements Page {
     if (this.find.kind === 'linking' || this.find.kind === 'linked') return;
     try {
       const raw = await bget<C1Discovery>(this.app.bridgeUrl, ENDPOINTS.discovery, 1500); const d: Discovery = uiDiscovery(raw);
+      const wasSuspect = this.firewallSuspect();
+      if (raw.listening) { if (!this.listenSince) this.listenSince = performance.now(); } else this.listenSince = 0;
+      this.consolesHeard = raw.seen.filter((x) => x.kind === 'console').length;
+      if (this.firewallSuspect() !== wasSuspect) this.bump();
       const want = this.s.console ? 'console' : 'flycast';
       // the one the bridge linked by itself (autoconnect) first, then the kind the person set up
       const hit = d.seen.find((x) => x.chosen) ?? d.seen.find((x) => x.kind === want) ?? (this.s.flycast ? d.seen.find((x) => x.kind === 'flycast') : undefined);
@@ -94,6 +102,14 @@ export class SetupPage implements Page {
       const nk: FindState = hit ? { kind: hit.chosen ? 'linked' : 'seen', address: hit.address, ip: hit.address, heard: raw.seen.find((x) => x.id === hit.id)?.address, device: hit.id, label: hit.kind === 'console' ? `Dreamcast, ${hit.transport === 'bba' ? 'broadband adapter' : 'modem'}` : 'Flycast on this PC' } : { kind: 'waiting' };
       if (nk.kind !== this.find.kind || nk.address !== this.find.address) { this.find = nk; this.bump(); }
     } catch { if (this.find.kind !== 'nobridge') { this.find = { kind: 'nobridge' }; this.bump(); } }
+  }
+  private firewallSuspect(): boolean {
+    return firewallSuspect({ connection: this.s.kind ?? '', lanAllowed: this.lanOn, listeningS: this.listenSince ? (performance.now() - this.listenSince) / 1000 : 0, consolesHeard: this.consolesHeard, linkedToConsole: this.find.kind === 'linked', ruleKnown: this.fwAllowed });
+  }
+  private async allowFirewall(): Promise<void> {
+    const q = desktop(); if (!q) return;
+    const r = await q.firewallAllow(); this.app.toast(r.ok ? 'ok' : 'warn', r.ok ? 'Firewall rule added' : 'Firewall unchanged', r.message);
+    this.fwAllowed = (await q.firewallCheck()).allowed; this.bump();
   }
   private async link(): Promise<void> {
     if (!this.find.device) return; this.find = { ...this.find, kind: 'linking' }; this.bump();
@@ -302,6 +318,7 @@ export class SetupPage implements Page {
         const act = f.kind === 'seen' ? btn('Link', () => void this.link(), { primary: true, icon: 'link-2' }) : f.kind === 'nobridge' ? (q ? btn('Start the bridge', () => void this.startBridge(), { primary: true, icon: 'play' }) : h('span', { class: 'mono faint', style: 'font-size:var(--fs-xs)' }, 'npm run bridge')) : null;
         return [lead('Start the loader on the console (or Flycast). It calls out on the local network every second; the bridge hears it and the app shows it here.'),
           h('div', { class: 'live-state', html: iconSvg(f.kind === 'linked' ? 'circle-check' : busy ? 'loader-circle' : f.kind === 'nobridge' ? 'server' : 'radio', 20, busy ? 'spin' : '') }, h('div', null, h('div', { class: 'big' }, big, ' ', h('span', { html: pill })), h('div', { class: 'sub' }, sub)), act),
+          ...(this.firewallSuspect() ? [h('div', { class: 'callout warn', 'data-firewall': 'suspect', html: iconSvg('shield') }, h('p', null, FIREWALL_HELP, ' ', q ? btn('Allow through Windows Firewall', () => void this.allowFirewall(), { small: true, icon: 'shield', primary: true }) : ''))] : []),
           h('details', { class: 'card', open: f.kind !== 'linked' }, h('summary', { class: 'card-head', html: iconSvg('list-checks') }, h('h2', null, 'Not found?')),
             h('div', { class: 'card-body' }, h('ul', { class: 'check-ul' },
               ...[['cable', 'The network cable is in the broadband adapter and in the router (or this PC).'], ['circle-dot', 'The adapter\'s link light is on.'], ['wifi', 'This PC is on the same network as the console, not a guest or VPN network.'], ['tv', 'The loader\'s screen shows its address, the PC it heard and a beacon count. The address should start like this PC\'s; a count that stays at 0 means the beacon is not reaching this PC.'], ['shield', 'If Windows asked about networks, Private networks was allowed.']].map(([ic, t]) => h('li', { html: iconSvg(ic) }, t)))))];

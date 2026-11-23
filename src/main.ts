@@ -24,7 +24,7 @@ async function boot(): Promise<void> {
   if (Q.get('src') === 'live') source = new LiveSource(Q.get('bridge') ?? 'http://127.0.0.1:52080');
   else {
     let replay: ReplaySource | null = null;
-    try { replay = await ReplaySource.fromUrl(demoUrl, state === 'lost' ? { lossAt: at ?? 412 } : {}); }
+    try { replay = await ReplaySource.fromUrl(demoUrl, state === 'lost' ? { lossAt: at ?? 412, demo: true } : { demo: true }); }
     catch (e) { console.error(e); }
     if (replay && state === 'unlinked') replay.seek(replay.length); // the home shows the last session whole
     source = state === 'unlinked' || !replay ? new IdleSource(replay) : replay;

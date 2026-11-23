@@ -46,8 +46,10 @@ export interface Source {
   command(c: CommandRequest): Promise<CommandResult>;
   runs(): Promise<RunRecord[]>;
   /** push a build; `args` reach the program through the loader (the same field as the MCP push's args) */
-  pushBuild(file: File | { name: string; bytes: Uint8Array }, opts?: { args?: string }): Promise<RunRecord>;
+  pushBuild(file: File | { name: string; bytes: Uint8Array }, opts?: { args?: string; deadline_s?: number }): Promise<RunRecord>;
   readMemory(addr: number, len: number, atN: number): Promise<MemoryReadResult>;
+  /** false once the bridge said its loader does not read memory (the views then say so, no errors) */
+  memorySupported?: boolean;
 }
 
 export class Emitter {
@@ -68,6 +70,8 @@ export interface ReplayOptions {
   /** simulate a link loss at this picture (demo of the lost state): data stops, retries fail until retryNow() */
   lossAt?: number;
   label?: string;
+  /** the bundled example session (the only source that may show example presets and assets) */
+  demo?: boolean;
 }
 
 /** Plays a session file on a clock: records with picture <= clock are in the store. */
@@ -96,6 +100,7 @@ export class ReplaySource extends Emitter implements Source {
     this.load(records);
     this.lossAt = opt.lossAt ?? 0;
   }
+  get demo(): boolean { return !!this.opt.demo; }
   static async fromUrl(url: string, opt: ReplayOptions = {}): Promise<ReplaySource> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
@@ -280,3 +285,9 @@ export function mockMemory(addr: number, len: number, atN: number): MemoryReadRe
   let s = ''; for (const b of out) s += String.fromCharCode(b);
   return { addr, data: btoa(s), n: atN };
 }
+
+/** The bridge answered that its loader does not read memory (dc-qalink 0.2: 501 "memory reads are not in this loader yet"). */
+export class MemoryUnsupportedError extends Error {
+  constructor(msg = 'memory reads are not in this version of QA Link') { super(msg); this.name = 'MemoryUnsupportedError'; }
+}
+export const MEMORY_UNSUPPORTED_TEXT = 'Memory reads are not in this version of QA Link: the bridge and loader do not read the console memory yet.';

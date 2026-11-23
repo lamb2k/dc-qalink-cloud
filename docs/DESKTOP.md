@@ -38,9 +38,11 @@ npm run app:capture                # test mode: each case renders offscreen, cap
 | `networkInterfaces()` | this PC's interfaces, with `lan` on the one the console can reach (private IPv4, not virtual) |
 | `programs()`, `startProgram(id)`, `stopProgram(id)`, `onProgram(cb)` | the bridge and Flycast: state, pid, last lines |
 | `chooseFlycast()`, `prepareFlycast()` | pick flycast.exe with the system dialog; make the app's own Flycast settings folder |
-| `settings()`, `setSetting(key, value)` | `startBridgeOnLaunch`, `bridgeAddress` (local only), `mcpLocal`, `consoleOnNetwork`, `autoconnect`, `connection` (`bba`, `modem`, `flycast`) |
+| `settings()`, `setSetting(key, value)` | `startBridgeOnLaunch`, `bridgeAddress` (local only), `mcpLocal`, `consoleOnNetwork`, `autoconnect`, `connection` (`bba`, `modem`, `flycast`), `runDeadline` (seconds as text, `''` = none, the default) |
 | `builds()`, `chooseBuilds()`, `useSample()` | the builds folder: the one folder shared with the console. Chosen with the system folder dialog, or the bundled sample game copied once into the app's data folder (`<data>/sample`); a running bridge restarts with it |
 | `readBuild(name)` | a program (`.elf`, `.bin`) by its plain name in the builds folder; a folder in the name, `..`, a link out of the folder or another kind is refused |
+| `bridgePython()`, `chooseBridgePython()`, `defaultBridgePython()` | the bridge's Python (Settings, "Python for the bridge": a `python.exe` chosen with the system dialog, or back to `QALINK_PYTHON` / the bundled one) |
+| `firewallCheck()`, `firewallAllow()` | whether a Windows Firewall rule lets that Python take UDP in (no elevation to look); add it: the app shows what changes, then Windows asks for an administrator's yes (an elevated PowerShell runs `New-NetFirewallRule`, inbound UDP, Private profile, that program only). Never run without the click |
 | `swapSampleTexture()` | the sample's floor (`DEMO3D/FLOOR.BMP`) and `extras/FLOOR_ALT.BMP` trade places (only when the builds folder is the sample) |
 
 ## The first-run set-up
@@ -93,6 +95,19 @@ Build it in two steps:
 Without `--python` the zip runs the bridge with the system Python 3.10+ (its MCP part then needs `pip install mcp`,
 the asset converters numpy); without `--bridge` the app ships the mock bridge only. Licences: THIRD_PARTY_NOTICES.md.
 dc-qalink stays usable alone: the same bridge runs from a plain Python install with no app.
+
+At launch the window opens live when the app starts its bridge, or when a bridge already answers at the bridge address
+(`desktop/launch.mjs`); the demo replay only when none answers. Windows may drop the console's UDP without asking when
+it has no rule for the bridge's Python: the set-up's Find step and Settings say so after 20 s of listening with no
+Dreamcast heard (broadband adapter, network allowed), with a button for the one rule (`desktop/firewall.mjs`). Pushes
+from the app send no run deadline unless Settings names one (dc-qalink 0.2.0's bridge still stops waiting for the
+loader after 900 s when none is sent; the live view stays live either way).
+
+The source is a hard boundary: the demo, a recording and a live build each keep their own panel state (runs, memory
+reads, presets and command history, assets, the disc listing; `src/data/scope.ts`), the store is the current source's
+only, and a panel with nothing from the current source says so ("this build declares no presets") instead of showing
+the demo's. The badge in the header and the status bar always names the source: Demo, Recording or Live on <device>.
+`npm run check:boundary` checks it in the app (demo, then a mock bridge with a synthetic build, then the demo again).
 
 ## Flycast
 The app never edits the user's Flycast settings. `prepareFlycast()` writes the app's own `emu.cfg` (broadband adapter

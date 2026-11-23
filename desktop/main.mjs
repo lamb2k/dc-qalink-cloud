@@ -16,6 +16,8 @@ import { randomUUID } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, watch as fsWatch, writeFileSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
+import { elevatedRuleCommand, ruleCheckCommand, RULE_NAME } from './firewall.mjs';
+import { launchQuery } from './launch.mjs';
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,7 +46,7 @@ const SETTINGS_FILE = () => join(app.getPath('userData'), 'settings.json');
 // a bridge started by a test, a script or an agent talks only to this PC (Flycast). autoconnect: link by itself.
 // connection: how the Dreamcast is linked ('' until the first-run set-up answers). buildsRoot: the one folder shared with
 // the console (the bridge's --files, --overlay and --asset-root); set only through the folder dialog or the sample.
-const DEFAULTS = { version: 1, startBridgeOnLaunch: false, bridgeAddress: 'http://127.0.0.1:52080', flycastPath: '', mcpLocal: false, flycastPrepared: '', consoleOnNetwork: false, autoconnect: true, connection: '', buildsRoot: '' };
+const DEFAULTS = { version: 1, startBridgeOnLaunch: false, bridgeAddress: 'http://127.0.0.1:52080', flycastPath: '', mcpLocal: false, flycastPrepared: '', consoleOnNetwork: false, autoconnect: true, connection: '', buildsRoot: '', runDeadline: '' };
 let settings = { ...DEFAULTS };
 function loadSettings() { try { settings = { ...DEFAULTS, ...JSON.parse(readFileSync(SETTINGS_FILE(), 'utf8')) }; } catch { settings = { ...DEFAULTS }; } }
 function saveSettings() { mkdirSync(dirname(SETTINGS_FILE()), { recursive: true }); writeFileSync(SETTINGS_FILE(), JSON.stringify(settings, null, 2)); }
@@ -55,6 +57,7 @@ const SETTABLE = {
   autoconnect: (v) => typeof v === 'boolean',
   bridgeAddress: (v) => typeof v === 'string' && /^http:\/\/(127\.0\.0\.1|localhost):\d{2,5}$/.test(v), // the bridge is local; remote is the remote link's job
   connection: (v) => v === 'bba' || v === 'modem' || v === 'flycast',
+  runDeadline: (v) => typeof v === 'string' && /^(|[1-9]\d{0,5})$/.test(v),   // seconds a pushed run may take; '' = none (the default)
 };
 
 // ------------------------------------------------------------------ the page: app:// with a strict policy
@@ -239,6 +242,35 @@ handle('prog:choose-flycast', async (e) => {
   if (!r.canceled && r.filePaths[0] && /flycast/i.test(basename(r.filePaths[0]))) { settings.flycastPath = r.filePaths[0]; saveSettings(); }
   return progStatus('flycast');
 });
+// ------------------------------------------------------------------ the bridge's Python and Windows Firewall
+handle('bridge:choose-python', async (e) => {
+  const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Python for the bridge (python.exe)', properties: ['openFile'], filters: [{ name: 'Python', extensions: ['exe'] }] });
+  if (!r.canceled && r.filePaths[0] && /^python[w0-9.]*\.exe$/i.test(basename(r.filePaths[0]))) { settings.bridgePython = r.filePaths[0]; saveSettings(); restartBridgeIfRunning(); }
+  return pythonInfo();
+});
+handle('bridge:default-python', () => { delete settings.bridgePython; saveSettings(); restartBridgeIfRunning(); return pythonInfo(); });
+handle('bridge:python', () => pythonInfo());
+function pythonInfo() {
+  const real = realBridge();
+  return { python: real?.python ?? '', label: real?.pythonLabel ?? 'no bridge found', chosen: !!settings.bridgePython, fromEnv: !settings.bridgePython && !!process.env.QALINK_PYTHON, ruleName: RULE_NAME };
+}
+const runPs = (c) => new Promise((res) => { const p = spawn(c.file, c.args, { windowsHide: true, stdio: 'ignore' }); p.on('exit', (code) => res(code)); p.on('error', () => res(-1)); });
+handle('firewall:check', async () => {
+  const exe = realBridge()?.python ?? '';
+  if (process.platform !== 'win32' || !isAbsolute(exe)) return { known: false, allowed: false, exe };
+  return { known: true, allowed: (await runPs(ruleCheckCommand(exe))) === 0, exe };
+});
+handle('firewall:allow', async (e) => {
+  const exe = realBridge()?.python ?? '';
+  let cmd; try { cmd = elevatedRuleCommand(exe); } catch (err) { return { ok: false, message: err.message }; }
+  // asked twice on purpose: this dialog says exactly what changes, then Windows asks for an administrator's yes
+  const c = await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender), { type: 'question', buttons: ['Allow', 'Cancel'], defaultId: 0, cancelId: 1, title: 'Allow the bridge through Windows Firewall',
+    message: 'Add one Windows Firewall rule?', detail: `Inbound UDP, Private networks only, for:\n${exe}\n\nRule name: ${RULE_NAME}\n\nWindows asks for an administrator's permission next. Nothing else changes.` });
+  if (c.response !== 0) return { ok: false, message: 'Cancelled; nothing changed.' };
+  const code = await runPs(cmd);
+  const check = await runPs(ruleCheckCommand(exe));
+  return check === 0 ? { ok: true, message: `Added "${RULE_NAME}" for ${exe}.` } : { ok: false, message: code === 1 ? 'Windows did not get an administrator\'s permission; nothing changed.' : `The rule was not added (exit ${code}).` };
+});
 handle('prog:prepare-flycast', () => {
   // the app's own Flycast settings: the broadband adapter on, everything else Flycast's defaults. Never the user's own.
   const dir = join(app.getPath('userData'), 'flycast'); mkdirSync(join(dir, 'data'), { recursive: true });
@@ -372,10 +404,13 @@ else {
     protocol.handle('app', serve);
     lockDown(session.defaultSession);
     let query = sw('query') || '';
-    if (app.commandLine.hasSwitch('start-bridge') || (!CAPTURE && settings.startBridgeOnLaunch)) {
-      try { startProgram('bridge'); if (!query.includes('src=')) query += (query ? '&' : '?') + `src=live&bridge=${encodeURIComponent(settings.bridgeAddress)}`; } catch (e) { console.error(e.message); }
+    // live when the app starts its bridge or a bridge already answers at the bridge address; the demo only otherwise
+    let startBridge = app.commandLine.hasSwitch('start-bridge') || (!CAPTURE && settings.startBridgeOnLaunch);
+    if (startBridge) {
+      try { startProgram('bridge'); } catch (e) { console.error(e.message); startBridge = false; }
       await new Promise((r) => setTimeout(r, 600));
     }
+    query = await launchQuery(query, { startBridge, bridgeAddress: settings.bridgeAddress, capture: CAPTURE && !app.commandLine.hasSwitch('probe-bridge') });
     const win = createWindow(query);
     if (CAPTURE) await capture(win);
   });

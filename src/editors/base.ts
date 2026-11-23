@@ -2,6 +2,7 @@
 import type { App } from '../ui/app';
 import type { MenuItem } from '../ui/menu';
 import { h, iconSvg } from '../ui/dom';
+import { sourceEpoch } from '../data/scope';
 
 export interface Editor {
   el: HTMLElement;
@@ -24,7 +25,7 @@ export class Watch {
   private ro: ResizeObserver | null = null;
   observe(el: Element): void { this.ro = new ResizeObserver(() => { this.sizeV++; }); this.ro.observe(el); }
   changed(app: App, extra = ''): boolean {
-    const k = `${app.store.version}|${app.view.version}|${app.themeV}|${this.sizeV}|${app.source.state}|${extra}`;
+    const k = `${sourceEpoch()}|${app.store.version}|${app.view.version}|${app.themeV}|${this.sizeV}|${app.source.state}|${extra}`;
     if (k === this.last) return false;
     this.last = k; return true;
   }

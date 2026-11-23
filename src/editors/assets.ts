@@ -15,6 +15,7 @@ import { ENDPOINTS, type C1Disc, type C1DiscFile } from '../data/bridge-api';
 import type { DiscRecord } from '../data/format';
 import { decoderFor, listDecoders, loadPlugins, type DecodedAsset, type DecodedMesh } from '../data/assetdec';
 import { drawMs, editorState, grabState, Latest, uploadAsset, uploadPath, viewAsset, type C1AssetRecord, type C1AssetView } from '../data/console-assets';
+import { isDemo, onSourceChange, perSource } from '../data/scope';
 
 const VRAM = 8 * 1024 * 1024, RAM = 16 * 1024 * 1024, STRIP_VERT = 32;
 type AState = 'live' | 'sent' | 'converting' | 'refused' | 'checked';
@@ -27,12 +28,14 @@ interface Asset {
 }
 const torus = torusMesh();
 const texBytes = (w: number, h: number) => { let b = 0; for (let s = Math.max(w, h); s >= 1; s >>= 1) b += Math.max(1, (w * s) / Math.max(w, h)) * Math.max(1, (h * s) / Math.max(w, h)) * 2; return Math.round(b); };
-const assets: Asset[] = [
+// the demo's example assets: shown with the demo only; a live build or another recording lists its own or none
+const DEMO_ASSETS = (): Asset[] => [
   { name: 'torus_checker.gltf', kind: 'model', state: 'live', tris: torus.T.length, strips: torus.strips, stripVerts: torus.stripVerts, texW: 256, texH: 256, note: 'RGB565, twiddled, 9 mip levels', mock: true },
   { name: 'uv_sphere_32.obj', kind: 'model', state: 'sent', tris: 1984, strips: 32, stripVerts: 32 * 33 * 2, texW: 0, texH: 0, note: 'no texture', mock: true },
   { name: 'checker_512.png', kind: 'texture', state: 'converting', tris: 0, strips: 0, stripVerts: 0, texW: 512, texH: 512, note: 'to twiddled VQ 512x512 + mip maps', mock: true },
   { name: 'sphere_dense_512.obj', kind: 'model', state: 'refused', tris: 524288, strips: 512, stripVerts: 512 * 513 * 2, texW: 0, texH: 0, note: 'refused before sending', mock: true },
 ];
+let assets: Asset[] = [];
 let version = 0;
 // once the bridge has converted it, its own numbers (the whole file the console holds; textures as they go into graphics
 // memory); the rule is the same (a quarter of main memory, half of graphics memory)
@@ -129,7 +132,11 @@ async function dropFile(app: App, f: File): Promise<void> {
 }
 
 // ---------------------------------------------------------------- the build's disc (lane ql-disc)
-const disc = { m: null as C1Disc | null, reads: [] as DiscRecord[], loaded: new Set<string>(), at: 0, busy: false, err: '', v: 0, plugins: false, filter: '' };
+const newDisc = () => ({ m: null as C1Disc | null, reads: [] as DiscRecord[], loaded: new Set<string>(), at: 0, busy: false, err: '', v: ++discGen * 1000, plugins: false, filter: '' });
+let discGen = 0;
+let disc = newDisc();
+// one asset list and one disc listing per source (data/scope.ts)
+onSourceChange((s) => { assets = perSource(s, 'assets', () => (isDemo(s) ? DEMO_ASSETS() : [])); disc = perSource(s, 'disc', newDisc); version += 1000; });
 const bridgeOn = (app: App) => app.source.kind === 'live';
 /** The manifest and the program's reads, every 2 s while a bridge is linked. A path the program opened is "loaded". */
 async function refreshDisc(app: App): Promise<void> {
@@ -229,7 +236,9 @@ class AssetList implements Editor {
       r.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.app.view.set('asset', i); });
       return r;
     });
-    this.el.replaceChildren(drop, ...rows, this.discSection(), this.input);
+    const src = this.app.source;
+    const none = rows.length ? [] : [empty('box', src.kind === 'live' ? 'This build declares no assets' : src.kind === 'replay' && !isDemo(src) ? 'This recording has no assets' : 'No assets yet', 'Drop a model or texture to check it against the console budget.')];
+    this.el.replaceChildren(drop, ...rows, ...none, this.discSection(), this.input);
   }
   private discSection(): HTMLElement {
     const m = disc.m; const sec = h('div', { class: 'prop-section' }, h('div', { class: 'section-title', html: iconSvg('disc-3') }, h('span', null, 'The build\'s disc')));
