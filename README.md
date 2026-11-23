@@ -21,9 +21,10 @@ Code or Codex can drive the console through MCP.
 ## Requirements
 
 - Windows 10 or 11, x64.
-- Python 3.10 or newer on PATH. The bridge uses only the standard library; its MCP part needs `pip install mcp`.
+- No Python needed for the release zip: it brings its own (3.12, with numpy, Pillow and mcp). From source, the bridge
+  runs with Python 3.10 or newer on PATH (`pip install mcp numpy pillow` for MCP and live assets).
 - For a real console or Flycast: a **dc-qalink 0.2** checkout for the loader disc and example programs. Until 0.2.0 is
-  released, use branch `v0.2-bridge` of https://github.com/lamb2k/dc-qalink.
+  released, use branch `v0.2` of https://github.com/lamb2k/dc-qalink.
 - From source only: Node.js 22.
 
 ## Quick start
@@ -34,7 +35,7 @@ Code or Codex can drive the console through MCP.
 2. Unzip anywhere and run `QA Link Cloud.exe`. It is portable and unsigned, so Windows SmartScreen may ask once.
 3. The first run opens **Set up a console**. Skip it to explore the built-in demo session.
 
-The zip carries dc-qalink's bridge (a pinned commit, MIT) in `resources\bridge`. The app runs it with your Python.
+The zip carries dc-qalink's bridge (a pinned commit of `v0.2`, MIT) and its own Python in `resources\bridge`.
 
 **From source**
 ```

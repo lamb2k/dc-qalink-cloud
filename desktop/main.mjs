@@ -165,7 +165,8 @@ function realBridge() {
   const embedded = PACKAGED ? join(process.resourcesPath, 'bridge', 'python', 'python.exe') : null;
   const python = settings.bridgePython || process.env.QALINK_PYTHON || (embedded && existsSync(embedded) ? embedded : 'python');
   const extra = Array.isArray(settings.bridgeArgs) ? settings.bridgeArgs.map(String) : [];
-  return { script: join(dir, 'pc', 'qalink_bridge.py'), python, pythonLabel: python === 'python' ? 'system Python' : basename(dirname(python)) === 'Scripts' ? 'Python venv' : 'Python', extra };
+  const pythonLabel = python === 'python' ? 'system Python' : python === embedded ? 'bundled Python' : basename(dirname(python)) === 'Scripts' ? 'Python venv' : 'Python';
+  return { script: join(dir, 'pc', 'qalink_bridge.py'), python, pythonLabel, extra };
 }
 const progs ={ bridge: { child: null, lastExit: null, output: [] }, flycast: { child: null, lastExit: null, output: [] } };
 function progSpec(id) {

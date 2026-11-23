@@ -6,6 +6,9 @@
 //   --out     where the app folder and zip go (default out/app; the folder is emptied first, so give a build folder)
 //   --bridge  bundle dc-qalink's bridge (its pc/ folder and LICENSE) as resources/bridge, so the app runs the real
 //             bridge with the system Python; without it the app starts the mock bridge. QALINK_BRIDGE_SRC works too.
+//   --python  with --bridge: a prepared Python embeddable folder (python.exe, python312._pth with `import site`, and
+//             Lib/site-packages holding numpy, Pillow and mcp; tools/make-python.ps1 makes one). It goes in as
+//             resources/bridge/python, so the zip needs no Python on the PC. QALINK_PYTHON_EMBED works too.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +23,10 @@ const bi = process.argv.indexOf('--bridge');
 const BRIDGE = bi > 0 ? resolve(process.argv[bi + 1]) : process.env.QALINK_BRIDGE_SRC ? resolve(process.env.QALINK_BRIDGE_SRC) : '';
 const ri = process.argv.indexOf('--bridge-ref');
 const BRIDGE_REF = ri > 0 ? process.argv[ri + 1] : process.env.QALINK_BRIDGE_REF ?? 'unknown';
+const pi = process.argv.indexOf('--python');
+const PYEMBED = pi > 0 ? resolve(process.argv[pi + 1]) : process.env.QALINK_PYTHON_EMBED ? resolve(process.env.QALINK_PYTHON_EMBED) : '';
+if (PYEMBED && !BRIDGE) throw new Error('--python needs --bridge (the Python runs the bundled bridge)');
+let pyInfo = null;   // the bundled Python's versions, when --python is given
 const CHANNEL = pkg_channel();
 function pkg_channel() { try { return JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).releaseChannel ?? ''; } catch { return ''; } }
 const STAGE = join(OUT, '..', 'stage');
@@ -52,8 +59,20 @@ if (BRIDGE) {
   if (!existsSync(join(BRIDGE, 'pc', 'qalink_bridge.py'))) throw new Error(`--bridge ${BRIDGE}: no pc/qalink_bridge.py there`);
   cpSync(join(BRIDGE, 'pc'), join(STAGE, 'res/bridge/pc'), { recursive: true, filter: (s) => !/[\\/](__pycache__|ev)([\\/]|$)|\.pyc$/.test(s.slice(BRIDGE.length)) });
   cpSync(join(BRIDGE, 'LICENSE'), join(STAGE, 'res/bridge/LICENSE'));
+  if (PYEMBED) {
+    const exe = join(PYEMBED, 'python.exe');
+    if (!existsSync(exe) || !existsSync(join(PYEMBED, 'Lib', 'site-packages'))) throw new Error(`--python ${PYEMBED}: no python.exe and Lib/site-packages there`);
+    // the bundle must import what the bridge needs, isolated from any Python on this PC
+    const out = execFileSync(exe, ['-I', '-c', 'import sys, numpy, PIL, mcp; from PIL import Image; from importlib.metadata import version as v; print(sys.version.split()[0], numpy.__version__, Image.__version__, v("mcp"))'], { encoding: 'utf8' }).trim().split(' ');
+    pyInfo = { python: out[0], numpy: out[1], pillow: out[2], mcp: out[3] };
+    cpSync(PYEMBED, join(STAGE, 'res/bridge/python'), { recursive: true, filter: (s) => !/[\\/]__pycache__([\\/]|$)|\.pyc$/.test(s.slice(PYEMBED.length)) });
+  }
   writeFileSync(join(STAGE, 'res/bridge/SOURCE.txt'), `dc-qalink bridge, https://github.com/lamb2k/dc-qalink commit ${BRIDGE_REF} (MIT, see LICENSE).
-Run by QA Link Cloud with the system Python 3.10+: python -I pc/qalink_bridge.py. Its MCP part needs: pip install mcp
+${pyInfo
+    ? `Run by QA Link Cloud with the bundled Python ${pyInfo.python} (python/, the official Windows embeddable package) with numpy ${pyInfo.numpy},
+Pillow ${pyInfo.pillow} and mcp ${pyInfo.mcp} in python/Lib/site-packages; each package's licence is in its .dist-info folder there.
+Command: python/python.exe -I pc/qalink_bridge.py`
+    : `Run by QA Link Cloud with the system Python 3.10+: python -I pc/qalink_bridge.py. Its MCP part needs: pip install mcp`}
 `);
   const theirs = readFileSync(join(STAGE, 'res/bridge/pc/bridge/mcp-tools.json'), 'utf8');
   const ours = execFileSync(process.execPath, [join(root, 'tools/gen-mcp-doc.mjs'), '--json'], { encoding: 'utf8' });
@@ -84,7 +103,7 @@ const zip = join(OUT, `QA-Link-Cloud-${pkg.version}${CHANNEL ? `-${CHANNEL}` : '
 // Windows' own tar (bsdtar) writes the zip; a GNU tar earlier on PATH (Git Bash) would read "E:" as a host
 const TAR = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 execFileSync(TAR, ['-a', '-c', '-f', zip, '-C', OUT, dir.split(/[\\/]/).pop()], { stdio: 'inherit' });
-const res = { dir, exe: join(dir, `${pkg.productName}.exe`), folderMB: +(size(dir) / 1048576).toFixed(1), zipMB: +(size(zip) / 1048576).toFixed(1), asarMB: +(size(join(dir, 'resources/app.asar')) / 1048576).toFixed(2), toolsKB: Math.round(size(join(dir, 'resources/tools')) / 1024), bridge: BRIDGE ? { ref: BRIDGE_REF, KB: Math.round(size(join(dir, 'resources/bridge')) / 1024) } : 'mock only', zip, electronVersion, seconds: +((Date.now() - t0) / 1000).toFixed(1) };
+const res = { dir, exe: join(dir, `${pkg.productName}.exe`), folderMB: +(size(dir) / 1048576).toFixed(1), zipMB: +(size(zip) / 1048576).toFixed(1), asarMB: +(size(join(dir, 'resources/app.asar')) / 1048576).toFixed(2), toolsKB: Math.round(size(join(dir, 'resources/tools')) / 1024), bridge: BRIDGE ? { ref: BRIDGE_REF, KB: Math.round(size(join(dir, 'resources/bridge')) / 1024), python: pyInfo ?? 'system Python' } : 'mock only', zip, electronVersion, seconds: +((Date.now() - t0) / 1000).toFixed(1) };
 writeFileSync(join(OUT, 'build.json'), JSON.stringify(res, null, 2));
 rmSync(STAGE, { recursive: true, force: true });
 console.log(JSON.stringify(res, null, 2));

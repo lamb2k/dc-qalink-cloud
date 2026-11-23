@@ -44,26 +44,27 @@ npm run app:capture                # test mode: each case renders offscreen, cap
 The program `bridge` is **dc-qalink's real bridge** (Python, contract 1) when the app can find it, else the mock bridge
 (`tools/mock-bridge.mjs`, labelled "mock: dc-qalink's bridge not found"). Where it looks (`desktop/main.mjs`,
 `realBridge()`): `settings.json`'s `bridgeDir` (a dc-qalink checkout; the page cannot set it), else `QALINK_DCQALINK`,
-else the packaged `resources/bridge`. Which Python: `bridgePython`, else `QALINK_PYTHON`, else the packaged embeddable
+else the packaged `resources/bridge`. Which Python: `bridgePython`, else `QALINK_PYTHON`, else the bundled embeddable
 `resources/bridge/python/python.exe`, else the system `python`. `bridgeArgs` (settings.json only) adds the bridge's own
 options (`--selftest`, `--loader-disc`, `--files`). The command line is
 `<python> -I <dc-qalink>/pc/qalink_bridge.py --port 52080 --data <app data>/bridge [--mcp-http 52081]` (the HTTP MCP
 when "Local MCP" is on); the Agents snippets name the same script with `--mcp stdio`.
-The release zip bundles dc-qalink's `pc/` folder (a pinned commit, MIT) as `resources/bridge`, run with the
-**system Python 3.10+** (the bridge needs only the standard library; its MCP part needs `pip install mcp`). Build it
-with `npm run app:dist -- --bridge <dc-qalink checkout> --bridge-ref <commit>`; without `--bridge` the app ships the
-mock bridge only. Not yet done: the embeddable Python package, so the zip would need no Python at all.
-Plan for bundling Python too:
-1. The build fetches the official **Python embeddable package** for Windows x64 (about 11 MB, no installer, no
-   registry) once, checks its hash, and puts it in `resources/bridge/python/` with dc-qalink's bridge package beside it
-   (`resources/bridge/dc_qalink/`). No pip at run time: the bridge needs only the standard library; the MCP part brings
-   the Python MCP SDK as a vendored wheel.
-2. The program `bridge` becomes `resources/bridge/python/python.exe -I -m dc_qalink.bridge --port <port>`; the app
-   starts and stops it exactly as it does the mock today (by id, hidden, stopped by pid).
-3. Its local MCP is the same module with `--mcp stdio` (for Claude Code / Codex, which start it themselves) or
-   `--mcp http --port <n>` (when the app's "Local MCP" switch is on). The tool list it serves is the JSON export of
-   `src/data/mcp-tools.ts` (`node tools/gen-mcp-doc.mjs --json`), so the mock MCP server stays the reference.
-4. dc-qalink stays usable alone: the same bridge runs from a plain Python install with no app.
+The release zip bundles dc-qalink's `pc/` folder (a pinned commit, MIT) as `resources/bridge` **and its own Python**
+in `resources/bridge/python/`, so the PC needs no Python at all:
+- the official **Python embeddable package 3.12.10** for Windows x64 (no installer, no registry), its MD5 checked
+  against python.org's release page;
+- **numpy** (the live-asset converters), **Pillow** (JPEG input and resizing) and **mcp** (the bridge's MCP server)
+  as binary wheels in `Lib/site-packages`; `python312._pth` holds `import site` so their `.pth` files run (pywin32);
+- the app runs it as `python/python.exe -I pc/qalink_bridge.py ...` (Settings shows "bundled Python"). `-I` keeps out
+  `PYTHON*` variables and the user's own site packages.
+
+Build it in two steps:
+1. `powershell -File tools/make-python.ps1 -Out <empty folder> -Pip <a Python 3.12 with pip>` (pip only downloads and
+   unpacks the wheels for win_amd64; it is not bundled);
+2. `npm run app:dist -- --bridge <dc-qalink checkout> --bridge-ref <commit> --python <folder>\python`.
+Without `--python` the zip runs the bridge with the system Python 3.10+ (its MCP part then needs `pip install mcp`,
+the asset converters numpy); without `--bridge` the app ships the mock bridge only. Licences: THIRD_PARTY_NOTICES.md.
+dc-qalink stays usable alone: the same bridge runs from a plain Python install with no app.
 
 ## Flycast
 The app never edits the user's Flycast settings. `prepareFlycast()` writes the app's own `emu.cfg` (broadband adapter
