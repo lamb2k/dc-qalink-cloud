@@ -23,19 +23,21 @@ Code or Codex can drive the console through MCP.
 - Windows 10 or 11, x64.
 - No Python needed for the release zip: it brings its own (3.12, with numpy, Pillow and mcp). From source, the bridge
   runs with Python 3.10 or newer on PATH (`pip install mcp numpy pillow` for MCP and live assets).
-- For a real console or Flycast: a **dc-qalink 0.2** checkout for the loader disc and example programs. Until 0.2.0 is
-  released, use branch `v0.2` of https://github.com/lamb2k/dc-qalink.
+- For a real console or Flycast: **dc-qalink 0.2.0** (https://github.com/lamb2k/dc-qalink, tag `v0.2.0`) for the
+  loader disc and example programs.
 - From source only: Node.js 22.
 
 ## Quick start
 
 **From the release zip**
-1. Download `DC-QA-Link-Cloud-0.1.0-preview-win-x64.zip` from
+1. Download `DC-QA-Link-Cloud-0.2.0-preview-win-x64.zip` from
    [Releases](https://github.com/lamb2k/dc-qalink-cloud/releases) and check it against `SHA256SUMS`.
 2. Unzip anywhere and run `DC QA Link Cloud.exe`. It is portable and unsigned, so Windows SmartScreen may ask once.
 3. The first run opens **Set up a console**. Skip it to explore the built-in demo session.
 
-The zip carries dc-qalink's bridge (a pinned commit of `v0.2`, MIT) and its own Python in `resources\bridge`.
+The zip carries dc-qalink's bridge (tag `v0.2.0`, MIT) and its own Python in `resources\bridge`, and the sample
+game in `resources\sample`: dc-qalink's `example/demo3d`, staged from its branch `v0.3-demo` (it is not part of
+dc-qalink 0.2.0).
 
 **From source**
 ```

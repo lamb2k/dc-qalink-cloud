@@ -78,7 +78,7 @@ describe.skipIf(!QL)('console assets: the real bridge (no console; QALINK_DCQALI
     try {
       const g = spawnSync(PY, ['-c', `import sys; sys.path.insert(0, r'${QL}\\pc'); from assets import gen; gen.write_all(r'${dir}\\gen')`]);
       expect(g.status).toBe(0);
-      p = spawn(PY, [join(QL!, 'pc', 'qalink_bridge.py'), '--port', '52384', '--udp-port', '52394', '--console', '127.0.0.1:52395', '--device', 'mock', '--data', join(dir, 'b'), '--quiet'], { stdio: 'ignore', windowsHide: true });
+      p = spawn(PY, [join(QL!, 'pc', 'qalink_bridge.py'), '--port', '52384', '--udp-port', '52394', '--console', '127.0.0.1:52395', '--device', 'mock', '--data', join(dir, 'b'), '--asset-root', dir, '--quiet'], { stdio: 'ignore', windowsHide: true });   // dc-qalink 0.2.0: path imports only below --asset-root
       const base = 'http://127.0.0.1:52384';
       for (let i = 0; i < 60; i++) { try { if ((await fetch(base + '/v0/status')).ok) break; } catch { /* starting */ } await new Promise((r) => setTimeout(r, 250)); }
       const tex = await uploadPath(base, join(dir, 'gen', 'card_256.png'));
