@@ -4,10 +4,11 @@ import type { Source } from '../data/source';
 import { IdleSource, ReplaySource } from '../data/source';
 import { LiveSource } from '../data/live';
 import type { SessionStore } from '../data/store';
-import { parseSession } from '../data/format';
+import { parseSession, shortBuild } from '../data/format';
+import { buildLine, listBuilds, newestSessionOf, referenceGrabs } from '../data/builds';
 import { download, h, icon, iconSvg, isTyping, resetTokens, save, store } from './dom';
 import { buildLayout, defaultLayout, findLeaf, loadLayout, mapLeaf, saveLayout, WORKSPACES, type Area, type LNode, type LayoutHost, type Workspace } from './layout';
-import { closeMenu } from './menu';
+import { closeMenu, openMenu, type MenuItem } from './menu';
 import { Commands, openPalette } from './palette';
 import { Timeline } from './timeline';
 import { grabCanvas, View } from './view';
@@ -231,8 +232,46 @@ export class App implements LayoutHost {
       items.push(h('span', { class: 'item mono' }, `${((s.state === 'linked' || s.state === 'replay') && s.playing ? s.info.rateBps / 1024 : 0).toFixed(1)} KB/s`));
       items.push(h('span', { class: 'item tier', title: st.meta.tierDetail ?? '', html: iconSvg('info') }, st.meta.tier));
     }
+    // the build this session ran (session format 2): the workspace's anchor; a click picks another build
+    if (st.meta) {
+      const b = st.meta.build;
+      const bi = h('button', { class: 'item', title: b ? `Build ${b.id}: ${buildLine(b)}. Click to pick another build.` : 'This session names no build (format 1, or a program started on the console). Click to pick a build.', html: iconSvg('git-commit-horizontal') }, h('span', null, b ? `Build ${shortBuild(b)}` : 'No build'));
+      bi.addEventListener('click', () => void this.pickBuild(bi));
+      items.push(bi);
+    }
     const keys = h('span', { class: 'keys' }, ...[['Space', 'play'], ['.', 'step'], ['G', 'grab'], ['Ctrl K', 'commands']].map(([k, l]) => h('span', null, h('span', { class: 'kbd' }, k), l)));
     this.status.replaceChildren(...items, keys);
+  }
+
+  // ------------------------------------------------------------------ builds (lane ql-disc)
+  /** A menu of the bridge's builds. "open" opens the build's newest session (every workspace follows the source);
+   *  "refs" adds that build's grabs to this session as references, for Capture's A/B compare across builds. */
+  async pickBuild(anchor: HTMLElement, what: 'open' | 'refs' = 'open'): Promise<void> {
+    const base = this.bridgeUrl;
+    let list: Awaited<ReturnType<typeof listBuilds>>;
+    try { list = await listBuilds(base); } catch (e) { this.toast('warn', 'No builds to pick', `The bridge at ${base} did not list its builds: ${String(e)}`); return; }
+    if (!list.builds.length) { this.toast('info', 'No builds yet', 'A build record is made at every push.'); return; }
+    const cur = this.store.meta?.build?.id;
+    const items: MenuItem[] = [{ group: what === 'open' ? 'Open the newest session of a build' : 'Add a build\'s grabs as references' },
+      ...list.builds.slice(0, 20).map((b) => ({ label: buildLine(b), icon: 'git-commit-horizontal', current: b.id === cur, run: () => void (what === 'open' ? this.openBuild(b.id) : this.addBuildRefs(b)) }))];
+    openMenu(anchor, items, 'Builds');
+  }
+  async openBuild(id: string): Promise<void> {
+    const base = this.bridgeUrl.replace(/\/$/, '');
+    try {
+      const s = await newestSessionOf(base, id);
+      if (!s) { this.toast('info', `Build ${id} has no session yet`, 'Its runs have not linked a program, or their sessions were removed.'); return; }
+      const r = await ReplaySource.fromUrl(base + `/v0/sessions/${encodeURIComponent(s.id)}`); r.playing = false; await this.setSource(r); r.seek(0);
+      this.toast('ok', `Build ${id}: ${s.label}`, 'Link, Performance, Capture and Assets show this build\'s newest session.');
+    } catch (e) { this.toast('err', `Could not open build ${id}`, String(e)); }
+  }
+  async addBuildRefs(b: NonNullable<NonNullable<SessionStore['meta']>['build']>): Promise<void> {
+    try {
+      const g = await referenceGrabs(this.bridgeUrl, b);
+      if (!g.length) { this.toast('info', `Build ${shortBuild(b)} has no grabs`, 'Grab its screen while it runs, then compare.'); return; }
+      this.store.appendMany(g); this.statusKey = '';
+      this.toast('ok', `${g.length} grabs of build ${shortBuild(b)} added as references`, 'In Capture: click one for A, Shift+click one of this build for B.');
+    } catch (e) { this.toast('err', 'Could not read that build\'s grabs', String(e)); }
   }
 
   // ------------------------------------------------------------------ loop
@@ -309,6 +348,10 @@ export class App implements LayoutHost {
     WORKSPACES.forEach((w, i) => C.add({ id: `ws.${w.id}`, title: `Go to ${w.label} workspace`, group: 'Workspaces', icon: w.icon, keys: String(i + 1), run: () => this.setWorkspace(w.id) }));
     PAGES.forEach((p, i) => C.add({ id: `page.${p.id}`, title: `Go to ${p.label}`, group: 'Workspaces', icon: p.icon, keys: String(WORKSPACES.length + i + 1), run: () => this.openPage(p.id) }));
     C.add({ id: 'setup.open', title: 'Set up a console', group: 'Link', icon: 'sparkles', run: () => this.openSetup() });
+    C.add(
+      { id: 'build.pick', title: 'Pick a build to view (its newest session)', group: 'Builds', icon: 'git-commit-horizontal', run: () => void this.pickBuild(this.status) },
+      { id: 'build.refs', title: 'Compare grabs with another build (adds its grabs as references)', group: 'Builds', icon: 'git-compare', enabled: hasData, run: () => void this.pickBuild(this.status, 'refs') },
+    );
     C.add(
       { id: 'play.toggle', title: 'Play or pause', group: 'Timeline', icon: 'play', keys: 'Space', enabled: () => this.source.kind !== 'idle', run: () => this.togglePlay() },
       { id: 'step.next', title: 'Step one picture', group: 'Timeline', icon: 'step-forward', keys: '.', enabled: () => this.source.kind !== 'idle', run: () => this.step(1) },

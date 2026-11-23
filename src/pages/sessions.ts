@@ -4,7 +4,7 @@
 import type { App } from '../ui/app';
 import { ENDPOINTS, uiSession, type C1Session, type SessionSummary } from '../data/bridge-api';
 import { bget } from '../data/bridge-client';
-import { parseSession, type SessionRecord } from '../data/format';
+import { parseSession, shortBuild, type SessionRecord } from '../data/format';
 import { ReplaySource } from '../data/source';
 import { SessionStore } from '../data/store';
 import { desktop } from '../platform/desktop';
@@ -12,14 +12,14 @@ import { download, esc, fitCanvas, fmt, h, iconSvg, int, num, tok } from '../ui/
 import { btn, empty } from '../editors/base';
 import type { Page } from './page';
 
-interface Entry { id: string; label: string; program: string; device: string; recorded: string; pictures: number; mean: number; tier: string; from: 'Built in' | 'File' | 'Bridge'; load(): Promise<string>; text?: string; store?: SessionStore; name: string }
+interface Entry { id: string; label: string; program: string; device: string; recorded: string; pictures: number; mean: number; tier: string; from: 'Built in' | 'File' | 'Bridge'; load(): Promise<string>; text?: string; store?: SessionStore; name: string; build?: string | null; buildLabel?: string }
 const opened: Entry[] = [];
 let builtins: Entry[] | null = null;
 
 function summarize(e: Entry, text: string): Entry {
   const recs: SessionRecord[] = parseSession(text); const st = new SessionStore(); st.appendMany(recs);
   const m = st.meta!; const tot = st.totalKey(); const ph = st.phases.find((p) => p.key === tot);
-  return Object.assign(e, { text, store: st, label: m.label, program: m.program.name, device: m.device.name, recorded: m.recorded, pictures: st.maxN, mean: ph ? st.stats(tot, ph.budget ?? 0).mean : NaN, tier: m.tier });
+  return Object.assign(e, { text, store: st, label: m.label, program: m.program.name, device: m.device.name, recorded: m.recorded, pictures: st.maxN, mean: ph ? st.stats(tot, ph.budget ?? 0).mean : NaN, tier: m.tier, build: m.build?.id ?? e.build ?? null, buildLabel: m.build ? shortBuild(m.build) : e.buildLabel });
 }
 async function loadBuiltins(): Promise<Entry[]> {
   const mk = (file: string): Entry => ({ id: `builtin:${file}`, name: file, label: file, program: '', device: '', recorded: '', pictures: 0, mean: NaN, tier: '', from: 'Built in', load: async () => (await fetch(`${import.meta.env.BASE_URL}${file}`)).text() });
@@ -43,7 +43,7 @@ export class SessionsPage implements Page {
     if (!(this.app.source.kind === 'live' && this.app.source.state === 'linked')) { this.bridge = []; this.v++; return; }
     try {
       const base = this.app.bridgeUrl; const list: SessionSummary[] = (await bget<{ sessions: C1Session[] }>(base, ENDPOINTS.sessions)).sessions.map(uiSession);
-      this.bridge = list.map((s) => ({ id: `bridge:${s.id}`, name: `${s.id}.jsonl`, label: s.label, program: '', device: s.device, recorded: s.recorded, pictures: s.pictures, mean: NaN, tier: s.tier, from: 'Bridge', load: async () => (await fetch(base.replace(/\/$/, '') + ENDPOINTS.session(s.id))).text() }));
+      this.bridge = list.map((s) => ({ id: `bridge:${s.id}`, name: `${s.id}.jsonl`, label: s.label, program: '', device: s.device, recorded: s.recorded, pictures: s.pictures, mean: NaN, tier: s.tier, build: s.build ?? null, from: 'Bridge', load: async () => (await fetch(base.replace(/\/$/, '') + ENDPOINTS.session(s.id))).text() }));
       this.v++;
     } catch (e) { this.app.toast('warn', 'The bridge did not list its sessions', String(e)); }
   }
@@ -70,13 +70,13 @@ export class SessionsPage implements Page {
     const head = h('div', { class: 'page-head' }, h('div', null, h('div', { class: 'eyebrow' }, 'Recordings'), h('h1', null, 'Sessions'), h('p', null, 'Every recording this app can reach. Open one to replay it, tick two to compare them, export one as a file.')),
       h('div', { class: 'actions' }, btn('Open a session file', () => void this.openFiles(), { icon: 'folder-open', kbd: 'Ctrl O' })));
     const t = h('table', { class: 'table' });
-    t.innerHTML = '<thead><tr><th class="chk"><span class="sr-only">Compare</span></th><th>Session</th><th>Where</th><th>Device</th><th>Recorded</th><th class="num">Pictures</th><th class="num">Mean picture ms</th><th>Tier</th><th></th></tr></thead>';
+    t.innerHTML = '<thead><tr><th class="chk"><span class="sr-only">Compare</span></th><th>Session</th><th>Where</th><th>Device</th><th>Recorded</th><th>Build</th><th class="num">Pictures</th><th class="num">Mean picture ms</th><th>Tier</th><th></th></tr></thead>';
     const tb = h('tbody');
     for (const e of all) {
       const cb = h('input', { type: 'checkbox', 'aria-label': `Compare ${e.label}`, checked: this.sel.includes(e.id) }); cb.addEventListener('change', () => this.toggle(e.id));
       const tr = h('tr', { class: this.sel.includes(e.id) ? 'is-selected' : '' });
       tr.append(h('td', { class: 'chk' }, cb));
-      tr.insertAdjacentHTML('beforeend', `<td><span class="ellipsis strong" title="${esc(e.label)}">${esc(e.label)}</span><div class="faint mono" style="font-size:var(--fs-xs)">${esc(e.name)}</div></td><td><span class="pill${e.from === 'Bridge' ? ' ok' : e.from === 'File' ? ' info' : ''}">${e.from}</span></td><td class="muted">${esc(e.device || '-')}</td><td class="mono muted">${esc(e.recorded.slice(0, 16).replace('T', ' ') || '-')}</td><td class="num">${e.pictures ? int(e.pictures) : '-'}</td><td class="num">${fmt(e.mean)}</td><td class="muted"><span class="ellipsis" title="${esc(e.tier)}">${esc(e.tier || '-')}</span></td>`);
+      tr.insertAdjacentHTML('beforeend', `<td><span class="ellipsis strong" title="${esc(e.label)}">${esc(e.label)}</span><div class="faint mono" style="font-size:var(--fs-xs)">${esc(e.name)}</div></td><td><span class="pill${e.from === 'Bridge' ? ' ok' : e.from === 'File' ? ' info' : ''}">${e.from}</span></td><td class="muted">${esc(e.device || '-')}</td><td class="mono muted">${esc(e.recorded.slice(0, 16).replace('T', ' ') || '-')}</td><td class="mono muted"><span class="ellipsis" title="${esc(e.build ?? 'no build (session format 1)')}">${esc(e.buildLabel ?? e.build ?? '-')}</span></td><td class="num">${e.pictures ? int(e.pictures) : '-'}</td><td class="num">${fmt(e.mean)}</td><td class="muted"><span class="ellipsis" title="${esc(e.tier)}">${esc(e.tier || '-')}</span></td>`);
       tr.append(h('td', null, h('span', { class: 'row-actions' }, btn('Open', () => void this.open(e), { small: true, icon: 'play' }), btn('Export', () => void this.export(e), { small: true, ghost: true, icon: 'download' }))));
       tb.append(tr);
     }
@@ -96,9 +96,10 @@ export class SessionsPage implements Page {
       const d = sb.mean - sa.mean; const cls = Math.abs(d) < 0.005 ? '' : d > 0 ? 'delta-up' : 'delta-down';
       return `<tr><td>${esc(pa.label)}</td><td class="num">${pa.budget ? fmt(pa.budget, 1) : '-'}</td><td class="num">${fmt(sa.mean)}</td><td class="num">${fmt(sb.mean)}</td><td class="num ${cls}">${d > 0 ? '+' : ''}${fmt(d)}</td><td class="num">${fmt(sa.p95)}</td><td class="num">${fmt(sb.p95)}</td><td class="num">${fmt(sa.worst)}</td><td class="num">${fmt(sb.worst)}</td></tr>`;
     }).join('');
+    const builds = a.build && b.build ? (a.build === b.build ? `<div class="callout" style="margin:var(--s-3) var(--s-4) 0">${iconSvg('git-commit-horizontal')}<p>Both ran build <b>${esc(a.buildLabel ?? a.build)}</b>: the difference is the device or the run, not the code.</p></div>` : `<div class="callout" style="margin:var(--s-3) var(--s-4) 0">${iconSvg('git-compare')}<p>Build A <b>${esc(a.buildLabel ?? a.build)}</b> against build B <b>${esc(b.buildLabel ?? b.build)}</b>.</p></div>`) : '';
     const tiers = a.tier === b.tier ? '' : `<div class="callout warn" style="margin:var(--s-3) var(--s-4) 0">${iconSvg('triangle-alert')}<p><b>Different tiers.</b> A is "${esc(a.tier)}", B is "${esc(b.tier)}": read the difference with that in mind.</p></div>`;
     const body = h('div', { class: 'card-body flush' });
-    body.innerHTML = `${tiers}<table class="table dense"><thead><tr><th>Phase</th><th class="num">Budget ms</th><th class="num">A mean</th><th class="num">B mean</th><th class="num">B - A</th><th class="num">A p95</th><th class="num">B p95</th><th class="num">A worst</th><th class="num">B worst</th></tr></thead><tbody>${rows}</tbody></table>`;
+    body.innerHTML = `${builds}${tiers}<table class="table dense"><thead><tr><th>Phase</th><th class="num">Budget ms</th><th class="num">A mean</th><th class="num">B mean</th><th class="num">B - A</th><th class="num">A p95</th><th class="num">B p95</th><th class="num">A worst</th><th class="num">B worst</th></tr></thead><tbody>${rows}</tbody></table>`;
     const tot = a.store.totalKey(); const busyKey = a.store.phases.find((p) => !p.total)?.key ?? tot;
     const legend = h('div', { class: 'cmp-legend', style: 'padding:var(--s-3) var(--s-4) 0' }, h('span', null, h('i', { style: 'background:var(--chart-draw)' }), `A: ${a.label}`), h('span', null, h('i', { style: 'background:var(--chart-svc)' }), `B: ${b.label}`), h('span', { class: 'faint' }, `${a.store.phases.find((p) => p.key === busyKey)?.label ?? busyKey} ms per picture`));
     body.append(legend, h('div', { style: 'padding:var(--s-2) var(--s-4) var(--s-4)' }, this.chart));

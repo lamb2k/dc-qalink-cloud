@@ -81,12 +81,15 @@ export function render(mesh: Mesh, cam: Cam, o: { w: number; h: number; bg: numb
   const img = g.createImageData(W, H); const zb = new Float32Array(W * H).fill(Infinity);
   for (let i = 0; i < W * H; i++) { img.data[i * 4] = o.bg[0]; img.data[i * 4 + 1] = o.bg[1]; img.data[i * 4 + 2] = o.bg[2]; img.data[i * 4 + 3] = 255; }
   const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-  const f = H / 2 / Math.tan(cam.fov / 2); const L = [0.4, 0.75, -0.5]; const ln = Math.hypot(...L); for (let i = 0; i < 3; i++) L[i] /= ln;
+  // dc-qalink docs/ASSETS.md contract 2a (one camera for the PC preview and the console): the camera sits on +z at
+  // yaw 0 looking towards -z, depth = dist - z2; L in view space with +z towards the viewer; shade = 0.25 + 0.75 n.L.
+  const f = H / 2 / Math.tan(cam.fov / 2); const L = [0.4, 0.75, 0.5]; const ln = Math.hypot(...L); for (let i = 0; i < 3; i++) L[i] /= ln;
   const P = mesh.V.map((v) => {
-    const [x, y, z] = v.p; const x1 = x * cy - z * sy, z1 = x * sy + z * cy; const y1 = y * cp - z1 * sp; let z2 = y * sp + z1 * cp; z2 += cam.dist;
+    const [x, y, z] = v.p; const x1 = x * cy - z * sy, z1 = x * sy + z * cy; const y1 = y * cp - z1 * sp; const z2 = y * sp + z1 * cp;
+    const depth = cam.dist - z2;
     const [nx, ny, nz] = v.n; const nx1 = nx * cy - nz * sy, nz1 = nx * sy + nz * cy; const ny1 = ny * cp - nz1 * sp, nz2 = ny * sp + nz1 * cp;
-    const sh = Math.max(0, nx1 * L[0] + ny1 * L[1] - nz2 * L[2]) * 0.75 + 0.25;
-    return { x: W / 2 + (x1 * f) / z2, y: H / 2 - (y1 * f) / z2, z: z2, s: sh, u: v.uv[0], v: v.uv[1] };
+    const sh = Math.min(1, Math.max(0, nx1 * L[0] + ny1 * L[1] + nz2 * L[2]) * 0.75 + 0.25);
+    return { x: W / 2 + (x1 * f) / depth, y: H / 2 - (y1 * f) / depth, z: depth, s: sh, u: v.uv[0], v: v.uv[1] };
   });
   const tex = (u: number, v: number) => (((Math.floor(u * 8) + Math.floor(v * 8)) & 1) ? o.colA : o.colB);
   for (const [a, b, c] of mesh.T) {

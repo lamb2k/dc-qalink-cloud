@@ -58,6 +58,17 @@ export const ENDPOINTS = {
   loader: '/v0/loader',
   reset: '/v0/reset',
   power: '/v0/power',
+  /** GET -> { builds: BuildRecord[], current }: every build pushed, newest first; GET /v0/builds/<id> one */
+  builds: '/v0/builds',
+  build: (id: string) => `/v0/builds/${encodeURIComponent(id)}`,
+  /** GET -> C1Disc: the network disc's manifest (every file, its side and hash) and its counters */
+  disc: '/v0/disc',
+  /** GET ?limit= -> { reads: DiscRecord[], total }: the program's reads (file, offset, bytes, ms, side) */
+  discReads: '/v0/disc/reads',
+  /** GET ?path= -> the file's bytes as the console sees it with the network disc on (overlay first) */
+  discFile: (path: string) => `/v0/disc/file?path=${encodeURIComponent(path)}`,
+  /** GET -> { plugins: [{name, url}] }: asset decoder plugins from the bridge's --asset-plugins folder (outside any repository) */
+  plugins: '/v0/plugins',
 } as const;
 
 export type Tier = 'console' | 'flycast' | 'mock';
@@ -87,6 +98,15 @@ export interface C1Status {
   autoconnect?: boolean; remembered?: number;
   /** talks only to a loader on this PC (Flycast); a console on the network is listed, never sent to (--allow-lan off) */
   only_local?: boolean; remote_refused?: number;
+  /** the current build's id (the last pushed); the network disc's mode, null when none is served */
+  build?: string | null; disc?: 'overlay' | 'whole' | null;
+}
+export interface C1DiscFile { path: string; size: number; sha256: string; side: 'pc' | 'disc'; source: 'base' | 'overlay'; changed: boolean; new?: boolean; base_sha256?: string | null }
+export interface C1Disc {
+  mode: 'overlay' | 'whole' | null; files: C1DiscFile[]; sha256?: string; count?: number; served?: number;
+  base?: { kind: string; path: string; files: number; volume?: string } | null; overlay?: { kind: string; path: string; files: number } | null;
+  stats?: { requests: number; resend_requests: number; bytes: number; request_ms?: { n: number; mean: number; p50: number; p99: number; worst: number }; program_reads?: Record<string, { records: number; bytes: number; ms: number; MBps: number | null }> };
+  note?: string;
 }
 export interface C1Number { label: string; value: number; unit: string; tier: Tier }
 export interface C1Summary { exit: number | null; state: C1RunState; seconds: number; pictures: number; numbers: C1Number[]; notes: string[]; tier: Tier; crash?: { event: string; pc: string; pr: string; sp: string } }
@@ -96,10 +116,11 @@ export interface C1Run {
   queued_at: string; ended_at: string | null; device: string; tier: Tier; summary: C1Summary | null;
   crash?: { event: string; pc: string; pr: string; sp: string }; error: string | null; stills: string[]; serial_lines: number;
   report?: string | null;
+  build?: string | null;
 }
 export interface C1Still { id: string; run: string; picture: number; width: number; height: number; format: 'rgb565'; crc_ok: boolean; bytes: number; seconds: number; tier: Tier; at: string }
 export interface C1Discovery { listening: boolean; port: number; seen: ({ id: string; console_ip: string; address: string; port: number; kind: 'console' | 'flycast'; transport: string; loader: string; beacons: number; last_s_ago: number; chosen: boolean; at: string; ident?: string | null; remembered?: boolean } & C1ConsoleCard)[] }
-export interface C1Session { id: string; label: string; device: string; started: string; recorded: string; pictures: number | null; tier: Tier; bytes: number }
+export interface C1Session { id: string; label: string; device: string; started: string; recorded: string; pictures: number | null; tier: Tier; bytes: number; version?: number; build?: string | null }
 export interface C1CommandResult { ok: boolean; id: string; n?: number | null; error?: string | null; rung?: string }
 
 // ---- the live stream
@@ -108,7 +129,7 @@ export interface HelloMessage { t: 'hello'; contract: number; bridge: string; s:
 /** About once a second. */
 export interface StatusMessage { t: 'status'; s: number; link: C1Link; rate_bps: number; paused: boolean; n: number; mode: 'full' | 'summary'; session: string | null; active_run: string | null }
 /** Run events (session-format record types a format-1 reader may ignore). */
-export interface RunEvent { t: 'link' | 'hello' | 'push' | 'verdict' | 'exec' | 'line' | 'file' | 'still' | 'back' | 'reset'; s: number; run?: string; [k: string]: unknown }
+export interface RunEvent { t: 'link' | 'hello' | 'push' | 'verdict' | 'exec' | 'line' | 'file' | 'still' | 'back' | 'reset' | 'disc'; s: number; run?: string; [k: string]: unknown }
 export type LiveMessage = HelloMessage | StatusMessage | RunEvent | (SessionRecord & { s?: number });
 
 // ---- the UI's view (plain words), mapped from contract 1
@@ -233,8 +254,8 @@ export function uiRun(r: C1Run): RunRecord {
 export interface MemoryReadRequest { addr: number; len: number }
 export interface MemoryReadResult { addr: number; data: string /* base64 */; n: number }
 
-export interface SessionSummary { id: string; label: string; device: string; recorded: string; pictures: number; tier: string; headline?: string }
-export function uiSession(s: C1Session): SessionSummary { return { id: s.id, label: s.label, device: s.device, recorded: s.started || s.recorded, pictures: s.pictures ?? 0, tier: s.tier }; }
+export interface SessionSummary { id: string; label: string; device: string; recorded: string; pictures: number; tier: string; headline?: string; build?: string | null }
+export function uiSession(s: C1Session): SessionSummary { return { id: s.id, label: s.label, device: s.device, recorded: s.started || s.recorded, pictures: s.pictures ?? 0, tier: s.tier, build: s.build ?? null }; }
 
 /** The contract major must match. */
 export function contractCompatible(theirs: number | string | undefined): boolean { return String(theirs ?? '').split('.')[0] === String(CONTRACT); }

@@ -134,6 +134,8 @@ button { font: inherit; }
 .asset { cursor: pointer; }
 .asset:hover { background: var(--bg-hover); }
 .asset.is-selected:hover { background: var(--bg-selected); }
+.asset.is-muted { color: var(--text-faint); cursor: default; }
+.asset.is-muted:hover { background: transparent; }
 
 /* memory */
 .hex { font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-sm); font-variant-numeric: tabular-nums; }

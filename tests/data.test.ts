@@ -29,9 +29,32 @@ describe('session format', () => {
     expect(parseSession(toJsonl(s))).toEqual(s);
   });
   it('refuses a newer version and a bad line', () => {
-    expect(() => parseSession(JSON.stringify({ ...meta, version: 2 }))).toThrow(SessionFormatError);
+    expect(() => parseSession(JSON.stringify({ ...meta, version: 3 }))).toThrow(SessionFormatError);
     expect(() => parseSession(JSON.stringify(meta) + '\n{oops')).toThrow(/line 2/);
     expect(() => parseSession('{"t":"row","n":1,"ph":{}}')).toThrow(/first record must be meta/);
+  });
+  it('version 2 carries the build; version 1 files still open (ql-disc)', () => {
+    const build = { id: 'b0123456789ab', program: { name: 'netdisc.elf', sha256: 'ab'.repeat(32), bytes: 10, commit: 'abc1234' }, disc: { manifest: 'cd'.repeat(32), mode: 'overlay' as const, files: 13, served: 5 }, loader: null, args: '', tier: 'flycast', created: 'x' };
+    const v2 = parseSession(toJsonl([{ ...meta, version: 2, build }, { t: 'log', n: 1, lv: 'info', msg: 'x', build: build.id } as SessionRecord]));
+    expect((v2[0] as MetaRecord).build?.id).toBe('b0123456789ab');
+    expect(parseSession(toJsonl(session(5)))[0]).toMatchObject({ version: 1 });
+  });
+  it('decodes a twiddled RGB565 PVR with mip maps and a VQ one (generated)', async () => {
+    const { decodePvr, twiddle } = await import('../src/data/assetdec');
+    const pvr = (pix: number, df: number, w: number, hh: number, data: Uint8Array) => { const b = new Uint8Array(16 + data.length); b.set([80, 86, 82, 84]); new DataView(b.buffer).setUint32(4, 8 + data.length, true); b[8] = pix; b[9] = df; new DataView(b.buffer).setUint16(12, w, true); new DataView(b.buffer).setUint16(14, hh, true); b.set(data, 16); return b; };
+    // 4x4 RGB565 twiddled + mips: 6 bytes pad, 1x1, 2x2, 4x4; the 4x4 level holds x + 4y at each texel's twiddled place
+    const lvl = new Uint8Array(32); for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { const i = twiddle(x, y); lvl[i * 2] = x + 4 * y; }   // the blue bits
+    const t = decodePvr(pvr(1, 2, 4, 4, new Uint8Array([...new Array(6 + 2 + 8).fill(0), ...lvl])), 'a.pvr');
+    expect(t.mips.map((m) => m.w)).toEqual([4, 2, 1]);
+    expect(t.format).toBe('RGB565');
+    const blue = (x: number, y: number) => t.mips[0].rgba[(y * 4 + x) * 4 + 2];
+    expect([blue(1, 0), blue(0, 1), blue(3, 3)]).toEqual([Math.round(1 * 255 / 31), Math.round(4 * 255 / 31), Math.round(15 * 255 / 31)]);
+    // VQ 4x4: codebook entry 1 = four white texels; the 2x2 index map points the top-left block at it
+    const code = new Uint8Array(2048); code.fill(0xff, 8, 16);
+    const v = decodePvr(pvr(1, 3, 4, 4, new Uint8Array([...code, 1, 0, 0, 0])), 'v.pvr');
+    expect([v.mips[0].rgba[0], v.mips[0].rgba[(1 * 4 + 1) * 4], v.mips[0].rgba[(2 * 4 + 2) * 4]]).toEqual([255, 255, 0]);
+    // CONTROL: a file without PVRT is refused
+    expect(() => decodePvr(new Uint8Array(32), 'bad.pvr')).toThrow(/PVRT/);
   });
   it('bridge API: major.minor must match', () => {
     expect(apiCompatible(BRIDGE_API_VERSION)).toBe(true);

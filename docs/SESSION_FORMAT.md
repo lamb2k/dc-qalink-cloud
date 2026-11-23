@@ -1,8 +1,8 @@
-# Session format, version 1
+# Session format, version 2
 
 A session is what a linked program sent while it ran, written down. The bridge's live stream carries the same
 records, so a recording is the stream saved to a file and a replay feeds them back on a clock.
-Types: `src/data/format.ts` (`SESSION_FORMAT = "dc-qalink.session"`, `SESSION_FORMAT_VERSION = 1`).
+Types: `src/data/format.ts` (`SESSION_FORMAT = "dc-qalink.session"`, `SESSION_FORMAT_VERSION = 2`; version 1 files still open).
 
 ## File
 
@@ -61,3 +61,10 @@ phases; the slowest pictures are ranked by it, because the pacer makes picture t
 
 - **1** (2026-11-22, ql-ui): first version. Adding an optional field or a record type a reader may ignore keeps the
   version; anything else bumps it.
+- **2** (2026-11-22, ql-disc): the build is the anchor. `meta.build` is the build record (`id`, `program` {`name`,
+  `sha256`, `bytes`, `commit`}, `disc` {`manifest`, `mode`, `files`, `served`}, `loader`, `args`, `tier`, `created`) and
+  any record may carry `build` (its id). New record `disc` (the network disc): `op` `mount` / `open` / `read` with `path`,
+  `off`, `bytes`, `ms` (the console's time inside its read calls), `calls`, `side` (`pc` served, `disc` GDEMU). A grab
+  may carry `build`; another build's grab added for compare has `kind: reference` and a label naming the build.
+  Version-1 files open unchanged (no build). Bumped so that a version-1 reader does not show a build-stamped session as
+  one with no build.
