@@ -7,7 +7,9 @@ Code or Codex can drive the console through MCP.
 ![The Link workspace, live: console screen, phase graphs against budget, log, properties and the timeline](docs/images/hero-link-live.png)
 <sub>Link workspace, live against the mock bridge. Demo data (synthetic), not a measurement.</sub>
 
-**Status: preview.** Works with Flycast. Run-and-return on a real console is still being fixed. Expect rough edges.
+**Status: preview.** Works with Flycast. On a real console, push, run, report, screen grabs and the way back by
+full restart worked on 2026-11-22 with an earlier 0.2 loader; the 0.2.0 loader's console check is next. Expect
+rough edges.
 
 ## What it does
 
