@@ -134,7 +134,7 @@ async function main() {
       'phone-dark': 'Phone 390 px, dark', 'phone-light': 'Phone, light', 'phone-perf-light': 'Phone, light' };
     const page = (title, names, phones) => `<body style="margin:0;background:#0d0e10;color:#c8ccd2;font:13px Inter,system-ui,sans-serif;width:1400px">
       <div style="padding:16px 20px 4px;font-size:18px;font-weight:600;color:#f5f6f7">${title}</div>
-      <div style="padding:0 20px 12px;color:#a2a8b0">QA Link Cloud (ql-ui), Edge headless captures at 1440x900, synthetic demo session (generated test pictures), ${new Date().toISOString().slice(0, 10)}. Finished, unaudited.</div>
+      <div style="padding:0 20px 12px;color:#a2a8b0">DC QA Link Cloud (ql-ui), Edge headless captures at 1440x900, synthetic demo session (generated test pictures), ${new Date().toISOString().slice(0, 10)}. Finished, unaudited.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;padding:0 20px 20px">${names.map((n) => `<figure style="margin:0"><img src="${img(n)}" style="width:670px;display:block;border:1px solid #2d3036;border-radius:4px"><figcaption style="padding-top:6px">${cap[n] || n}</figcaption></figure>`).join('')}</div>
       ${phones ? `<div style="display:flex;gap:20px;padding:0 20px 20px">${phones.map((n) => `<figure style="margin:0"><img src="${img(n)}" style="width:234px;display:block;border:1px solid #2d3036;border-radius:4px"><figcaption style="padding-top:6px">${cap[n] || n}</figcaption></figure>`).join('')}</div>` : ''}</body>`;
     const make = async (file, title, names, phones) => {

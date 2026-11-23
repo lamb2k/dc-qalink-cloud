@@ -76,10 +76,10 @@ if (BRIDGE) {
   }
   writeFileSync(join(STAGE, 'res/bridge/SOURCE.txt'), `dc-qalink bridge, https://github.com/lamb2k/dc-qalink commit ${BRIDGE_REF} (MIT, see LICENSE).
 ${pyInfo
-    ? `Run by QA Link Cloud with the bundled Python ${pyInfo.python} (python/, the official Windows embeddable package) with numpy ${pyInfo.numpy},
+    ? `Run by DC QA Link Cloud with the bundled Python ${pyInfo.python} (python/, the official Windows embeddable package) with numpy ${pyInfo.numpy},
 Pillow ${pyInfo.pillow} and mcp ${pyInfo.mcp} in python/Lib/site-packages; each package's licence is in its .dist-info folder there.
 Command: python/python.exe -I pc/qalink_bridge.py`
-    : `Run by QA Link Cloud with the system Python 3.10+: python -I pc/qalink_bridge.py. Its MCP part needs: pip install mcp`}
+    : `Run by DC QA Link Cloud with the system Python 3.10+: python -I pc/qalink_bridge.py. Its MCP part needs: pip install mcp`}
 `);
   const theirs = readFileSync(join(STAGE, 'res/bridge/pc/bridge/mcp-tools.json'), 'utf8');
   const ours = execFileSync(process.execPath, [join(root, 'tools/gen-mcp-doc.mjs'), '--json'], { encoding: 'utf8' });
@@ -101,12 +101,12 @@ const [dir] = await packager({
   win32metadata: { CompanyName: 'dc-qalink', FileDescription: pkg.productName, ProductName: pkg.productName, InternalName: pkg.name },
 });
 // this app's licence and notices beside Electron's own LICENSE and LICENSES.chromium.html
-cpSync(join(root, 'LICENSE'), join(dir, 'LICENSE.QA-Link-Cloud.txt'));
+cpSync(join(root, 'LICENSE'), join(dir, 'LICENSE.DC-QA-Link-Cloud.txt'));
 cpSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(dir, 'THIRD_PARTY_NOTICES.md'));
 // only the English locale ships (the UI is English); Chromium falls back to it
 for (const f of readdirSync(join(dir, 'locales'))) if (f !== 'en-US.pak') rmSync(join(dir, 'locales', f));
 const size = (p) => { let n = 0; const w = (d) => { for (const f of readdirSync(d)) { const q = join(d, f); const s = statSync(q); if (s.isDirectory()) w(q); else n += s.size; } }; statSync(p).isDirectory() ? w(p) : (n = statSync(p).size); return n; };
-const zip = join(OUT, `QA-Link-Cloud-${pkg.version}${CHANNEL ? `-${CHANNEL}` : ''}-win-x64.zip`);
+const zip = join(OUT, `DC-QA-Link-Cloud-${pkg.version}${CHANNEL ? `-${CHANNEL}` : ''}-win-x64.zip`);
 // Windows' own tar (bsdtar) writes the zip; a GNU tar earlier on PATH (Git Bash) would read "E:" as a host
 const TAR = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 execFileSync(TAR, ['-a', '-c', '-f', zip, '-C', OUT, dir.split(/[\\/]/).pop()], { stdio: 'inherit' });

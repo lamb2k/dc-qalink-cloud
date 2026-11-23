@@ -1,4 +1,4 @@
-# QA Link Cloud
+# DC QA Link Cloud
 
 The desktop companion to [dc-qalink](https://github.com/lamb2k/dc-qalink): link a Dreamcast (or Flycast) to your PC
 and see live timings, grab the screen, push and run builds, send commands and keep sessions. Agents such as Claude
@@ -30,9 +30,9 @@ Code or Codex can drive the console through MCP.
 ## Quick start
 
 **From the release zip**
-1. Download `QA-Link-Cloud-0.1.0-preview-win-x64.zip` from
+1. Download `DC-QA-Link-Cloud-0.1.0-preview-win-x64.zip` from
    [Releases](https://github.com/lamb2k/dc-qalink-cloud/releases) and check it against `SHA256SUMS`.
-2. Unzip anywhere and run `QA Link Cloud.exe`. It is portable and unsigned, so Windows SmartScreen may ask once.
+2. Unzip anywhere and run `DC QA Link Cloud.exe`. It is portable and unsigned, so Windows SmartScreen may ask once.
 3. The first run opens **Set up a console**. Skip it to explore the built-in demo session.
 
 The zip carries dc-qalink's bridge (a pinned commit of `v0.2`, MIT) and its own Python in `resources\bridge`.
@@ -109,17 +109,17 @@ The desktop app, dark theme, 1440x900, captured offscreen by the app's own test 
 
 ## MCP for agents
 
-Start the bridge first (Settings > Bridge and Flycast). Then, with the zip unzipped to `C:\Tools\QA Link Cloud`:
+Start the bridge first (Settings > Bridge and Flycast). Then, with the zip unzipped to `C:\Tools\DC QA Link Cloud`:
 
 Claude Code:
 ```
-claude mcp add qalink -- python -I "C:\Tools\QA Link Cloud\resources\bridge\pc\qalink_bridge.py" --mcp stdio --bridge http://127.0.0.1:52080 --mcp-level control
+claude mcp add qalink -- python -I "C:\Tools\DC QA Link Cloud\resources\bridge\pc\qalink_bridge.py" --mcp stdio --bridge http://127.0.0.1:52080 --mcp-level control
 ```
 Codex (`~/.codex/config.toml`):
 ```
 [mcp_servers.qalink]
 command = "python"
-args = ["-I", "C:\\Tools\\QA Link Cloud\\resources\\bridge\\pc\\qalink_bridge.py", "--mcp", "stdio", "--bridge", "http://127.0.0.1:52080", "--mcp-level", "control"]
+args = ["-I", "C:\\Tools\\DC QA Link Cloud\\resources\\bridge\\pc\\qalink_bridge.py", "--mcp", "stdio", "--bridge", "http://127.0.0.1:52080", "--mcp-level", "control"]
 ```
 The app shows these lines with your own paths in Settings > Agents. Level `control` can read and steer but not push
 code; raise it to `run` on purpose. Tool list: [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).

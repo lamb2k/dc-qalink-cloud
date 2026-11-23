@@ -1,4 +1,4 @@
-# QA Link Cloud desktop app (Windows)
+# DC QA Link Cloud desktop app (Windows)
 
 The same UI as the web page (`src/`, TypeScript, no framework), inside an Electron shell (`desktop/`). One code base:
 the UI asks `desktop()` (`src/platform/desktop.ts`) and shows desktop-only actions only when it answers.
@@ -9,10 +9,10 @@ npm install
 npm run build                      # token lint, type check, web build (dist/)
 npx electron tools/make-icon.mjs   # once: build/icon.ico and icon.png from the brand mark
 npm run app                        # build and open the app from source (a visible window: for people, not tests)
-npm run app:dist                   # portable build: <out>/QA Link Cloud-win32-x64/ and a zip (unsigned, not published)
+npm run app:dist                   # portable build: <out>/DC QA Link Cloud-win32-x64/ and a zip (unsigned, not published)
 npm run app:capture                # test mode: each case renders offscreen, captures itself and exits; no window
 ```
-`tools/desktop-capture.mjs --packaged "<...>\QA Link Cloud.exe"` runs the same cases on the packaged app.
+`tools/desktop-capture.mjs --packaged "<...>\DC QA Link Cloud.exe"` runs the same cases on the packaged app.
 
 ## How it is put together
 - **The page** is served from a private `app://studio/` scheme (the web build), with a content security policy on

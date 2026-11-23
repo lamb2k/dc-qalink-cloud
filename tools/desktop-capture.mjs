@@ -1,6 +1,6 @@
 // Runs the desktop app in its self-capturing test mode (no window shown, no focus taken), one case after another,
 // each with a time limit and stopped by pid if it hangs. Pictures and metrics go to --out (default out/shots).
-// Usage: node tools/desktop-capture.mjs [--packaged <path to QA Link Cloud.exe>] [--out <dir>] [--case name] [--runs n]
+// Usage: node tools/desktop-capture.mjs [--packaged <path to DC QA Link Cloud.exe>] [--out <dir>] [--case name] [--runs n]
 //        [--set readme]   the README's screenshot tour (synthetic demo data and the mock bridge, example paths and
 //                         documentation addresses in place of this PC's: --demo-shots)
 import { spawn } from 'node:child_process';

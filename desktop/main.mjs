@@ -1,4 +1,4 @@
-// QA Link Cloud desktop app: the Electron main process. It serves the same web build the hosted page uses, from a
+// DC QA Link Cloud desktop app: the Electron main process. It serves the same web build the hosted page uses, from a
 // private app:// scheme with a strict content security policy, and gives the page one small interface (preload.cjs,
 // src/platform/desktop.ts) for what a browser cannot do: files on disk, watching them, this PC's network interfaces,
 // starting the bridge and Flycast by id, and the app's settings. Nothing remote is ever loaded.
@@ -13,7 +13,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, nativeImage } from 'electron';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, watch as fsWatch, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, watch as fsWatch, writeFileSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
@@ -25,6 +25,11 @@ const ROOT = resolve(HERE, '..');
 const sw = (k) => app.commandLine.getSwitchValue(k);
 const CAPTURE = app.commandLine.hasSwitch('capture-and-exit');
 if (sw('user-data')) app.setPath('userData', resolve(sw('user-data')));
+// The app was called "QA Link Cloud" before: move its data folder to the new name once, so settings carry over.
+else {
+  const now = app.getPath('userData'), was = join(app.getPath('appData'), 'QA Link Cloud');
+  if (now !== was && !existsSync(now) && existsSync(was)) { try { renameSync(was, now); } catch { app.setPath('userData', was); } }
+}
 
 const PACKAGED = app.isPackaged;
 const WEB = PACKAGED ? join(ROOT, 'web') : join(ROOT, 'dist');
@@ -83,7 +88,7 @@ const fromApp = (e) => { const u = e.senderFrame?.url ?? ''; if (!u.startsWith(`
 // --demo-shots (test mode only): pictures for the README show neutral example paths and documentation addresses,
 // never this PC's folders or network
 const DEMO_SHOTS = CAPTURE && app.commandLine.hasSwitch('demo-shots');
-const DEMO_PATHS = () => [[app.getPath('userData'), 'C:\\Users\\you\\AppData\\Roaming\\QA Link Cloud'], [PACKAGED ? dirname(process.execPath) : ROOT, 'C:\\Tools\\QA Link Cloud']];
+const DEMO_PATHS = () => [[app.getPath('userData'), 'C:\\Users\\you\\AppData\\Roaming\\DC QA Link Cloud'], [PACKAGED ? dirname(process.execPath) : ROOT, 'C:\\Tools\\DC QA Link Cloud']];
 const neutral = (v) => {
   if (typeof v === 'string') { for (const [from, to] of DEMO_PATHS()) v = v.split(from).join(to); return v; }
   if (Array.isArray(v)) return v.map(neutral);
@@ -121,7 +126,7 @@ function grant(path, purpose) {
   const h = randomUUID(); granted.set(h, { path, name: basename(path), purpose }); return h;
 }
 
-handle('app:info', () => ({ app: 'QA Link Cloud', version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node, platform: `${process.platform} ${process.arch}`, packaged: PACKAGED, dataDir: app.getPath('userData'), mcp: mcpLaunch(), capture: CAPTURE }));
+handle('app:info', () => ({ app: 'DC QA Link Cloud', version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node, platform: `${process.platform} ${process.arch}`, packaged: PACKAGED, dataDir: app.getPath('userData'), mcp: mcpLaunch(), capture: CAPTURE }));
 handle('file:open', async (e, purpose, multi) => {
   const p = purposeOf(purpose);
   const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { properties: multi ? ['openFile', 'multiSelections'] : ['openFile'], filters: [{ name: p.name, extensions: p.ext }] });
@@ -238,7 +243,7 @@ handle('prog:prepare-flycast', () => {
   // the app's own Flycast settings: the broadband adapter on, everything else Flycast's defaults. Never the user's own.
   const dir = join(app.getPath('userData'), 'flycast'); mkdirSync(join(dir, 'data'), { recursive: true });
   const cfg = join(dir, 'emu.cfg');
-  if (!existsSync(cfg)) writeFileSync(cfg, '; written by QA Link Cloud for its own Flycast runs; your own Flycast settings are not touched\n[network]\nEmulateBBA = yes\nEnable = no\n');
+  if (!existsSync(cfg)) writeFileSync(cfg, '; written by DC QA Link Cloud for its own Flycast runs; your own Flycast settings are not touched\n[network]\nEmulateBBA = yes\nEnable = no\n');
   settings.flycastPrepared = dir; saveSettings();
   return { ok: true, dir, note: 'Flycast started by the app reads this folder; your own Flycast settings stay as they are.' };
 });
@@ -309,7 +314,7 @@ function mcpLaunch() {
 function createWindow(query) {
   const [W, H] = (sw('size') || '1440x900').split('x').map(Number);
   const win = new BrowserWindow({
-    width: W, height: H, useContentSize: true, minWidth: 1024, minHeight: 640, backgroundColor: '#0d0e10', title: 'QA Link Cloud',
+    width: W, height: H, useContentSize: true, minWidth: 1024, minHeight: 640, backgroundColor: '#0d0e10', title: 'DC QA Link Cloud',
     icon: existsSync(ICON) ? nativeImage.createFromPath(ICON) : undefined, show: false, autoHideMenuBar: true,
     ...(CAPTURE ? { skipTaskbar: true, focusable: false, paintWhenInitiallyHidden: true } : {}),
     webPreferences: { preload: join(HERE, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false, devTools: !PACKAGED && !CAPTURE, backgroundThrottling: !CAPTURE,

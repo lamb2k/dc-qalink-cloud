@@ -14,11 +14,11 @@ import type { Page } from './page';
 export type RemoteState = 'off' | 'connecting' | 'on' | 'refused';
 export const remote = { state: (new URLSearchParams(location.search).get('remote') as RemoteState) || 'off', reason: '', v: 0 };
 if (!['off', 'connecting', 'on', 'refused'].includes(remote.state)) remote.state = 'off';
-if (remote.state === 'refused') remote.reason = 'No QA Link Cloud account is set up on this PC yet (milestone L3b).';
+if (remote.state === 'refused') remote.reason = 'No DC QA Link Cloud account is set up on this PC yet (milestone L3b).';
 export function setRemote(on: boolean): void {
   if (!on) { remote.state = 'off'; remote.reason = ''; remote.v++; return; }
   remote.state = 'connecting'; remote.reason = ''; remote.v++;
-  setTimeout(() => { if (remote.state !== 'connecting') return; remote.state = 'refused'; remote.reason = 'No QA Link Cloud account is set up on this PC yet (milestone L3b). Nothing left this PC.'; remote.v++; }, 1600);
+  setTimeout(() => { if (remote.state !== 'connecting') return; remote.state = 'refused'; remote.reason = 'No DC QA Link Cloud account is set up on this PC yet (milestone L3b). Nothing left this PC.'; remote.v++; }, 1600);
 }
 
 export function mcpSnippets(info: AppInfo | null): { claude: string; codex: string } {
@@ -63,7 +63,7 @@ export class SettingsPage implements Page {
   frame(): void {
     void this.loadDevices();
     const k = `${this.v}|${remote.v}|${this.app.themeV}|${this.app.source.state}`; if (k === this.built) return; this.built = k;
-    const head = h('div', { class: 'page-head' }, h('div', null, h('div', { class: 'eyebrow' }, 'QA Link Cloud'), h('h1', null, 'Settings'), h('p', null, desktop() ? 'Saved in the app\'s own folder on this PC.' : 'Saved in this browser. The desktop app adds programs, files and this PC\'s network.')),
+    const head = h('div', { class: 'page-head' }, h('div', null, h('div', { class: 'eyebrow' }, 'DC QA Link Cloud'), h('h1', null, 'Settings'), h('p', null, desktop() ? 'Saved in the app\'s own folder on this PC.' : 'Saved in this browser. The desktop app adds programs, files and this PC\'s network.')),
       h('div', { class: 'actions' }, btn('Set up a console', () => this.app.cmds.run('setup.open'), { icon: 'sparkles', primary: true })));
     const col = (...c: HTMLElement[]) => h('div', { class: 'col' }, ...c);
     this.el.replaceChildren(head, h('div', { class: 'grid-2' }, col(this.buildsCard(), this.devicesCard(), this.programsCard(), this.networkCard()), col(this.remoteCard(), this.appearanceCard(), this.aboutCard())), this.agentsCard());
@@ -105,15 +105,15 @@ export class SettingsPage implements Page {
     const sw = switchEl(s === 'on' || s === 'connecting', 'Remote link', (v) => setRemote(v), { busy: s === 'connecting', refused: s === 'refused' });
     const say: Record<RemoteState, string> = {
       off: 'Nothing leaves this PC. The console, the bridge and this app work on the local network only.',
-      connecting: 'Opening one outgoing connection to QA Link Cloud. No port is opened on this network.',
-      on: 'Linked to QA Link Cloud through one outgoing connection. A browser elsewhere and cloud agents with a token can reach this console. Every command is logged with who sent it.',
-      refused: remote.reason || 'QA Link Cloud refused the connection.',
+      connecting: 'Opening one outgoing connection to DC QA Link Cloud. No port is opened on this network.',
+      on: 'Linked to DC QA Link Cloud through one outgoing connection. A browser elsewhere and cloud agents with a token can reach this console. Every command is logged with who sent it.',
+      refused: remote.reason || 'DC QA Link Cloud refused the connection.',
     };
     const states = h('div', { class: 'remote-states' }, ...(['off', 'connecting', 'on', 'refused'] as RemoteState[]).map((x) => h('div', { class: `remote-state${x === s ? ' is-current' : ''}`, html: `<span class="pill${x === 'on' ? ' ok' : x === 'connecting' ? ' warn' : x === 'refused' ? ' err' : ''}">${x === 'off' ? 'Off' : x === 'on' ? 'On' : x === 'connecting' ? 'Connecting' : 'Refused'}</span>` },
       x === 'off' ? 'Local only' : x === 'connecting' ? 'Dialling out' : x === 'on' ? 'Reachable with sign-in' : 'Not set up, or signed out')));
     return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('globe') }, h('h2', null, 'Remote link'), h('span', { class: 'meta', html: pill })),
       h('div', { class: 'card-body remote' },
-        h('div', { class: 'remote-head' }, sw, h('div', null, h('div', { class: 't' }, 'Reach this console from elsewhere'), h('div', { class: 'faint', style: 'font-size:var(--fs-xs)' }, 'QA Link Cloud on Cloudflare: sign-in on every page and call'))),
+        h('div', { class: 'remote-head' }, sw, h('div', null, h('div', { class: 't' }, 'Reach this console from elsewhere'), h('div', { class: 'faint', style: 'font-size:var(--fs-xs)' }, 'DC QA Link Cloud on Cloudflare: sign-in on every page and call'))),
         h('div', { class: `callout${s === 'refused' ? ' err' : s === 'on' ? ' ok' : s === 'connecting' ? ' warn' : ''}`, html: iconSvg(s === 'refused' ? 'circle-x' : s === 'on' ? 'circle-check' : 'info') }, h('p', null, say[s], s === 'on' && new URLSearchParams(location.search).get('remote') === 'on' ? h('b', null, ' Design preview: nothing is connected.') : null)),
         states,
         h('dl', { class: 'kv' }, h('dt', null, 'Address'), h('dd', null, 'not set up (milestone L3b)'), h('dt', null, 'When on, leaves this PC'), h('dd', null, 'live data, grabs and sessions you upload'), h('dt', null, 'Never leaves'), h('dd', null, 'files on disk you did not send'))));
@@ -185,8 +185,9 @@ export class SettingsPage implements Page {
     const i = this.info;
     return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('info') }, h('h2', null, 'About')),
       h('div', { class: 'card-body' }, h('dl', { class: 'kv' },
-        h('dt', null, 'App'), h('dd', null, i ? `QA Link Cloud ${i.version}, desktop${i.packaged ? '' : ' (from source)'}` : 'QA Link Cloud, web page'),
+        h('dt', null, 'App'), h('dd', null, i ? `DC QA Link Cloud ${i.version}, desktop${i.packaged ? '' : ' (from source)'}` : 'DC QA Link Cloud, web page'),
         h('dt', null, 'Built on'), h('dd', null, 'dc-qalink 0.2 (in progress)'),
+        h('dt', null, 'Notice'), h('dd', null, 'Independent tool; not affiliated with Sega.'),
         h('dt', null, 'Bridge API'), h('dd', null, BRIDGE_API_VERSION),
         h('dt', null, 'Session format'), h('dd', null, String(SESSION_FORMAT_VERSION)),
         h('dt', null, 'MCP tool list'), h('dd', null, MCP_TOOLS_VERSION),

@@ -1,6 +1,6 @@
 # Third-party notices
 
-QA Link Cloud is MIT licensed (`LICENSE`). It ships or builds with the parts below. Every one may be redistributed.
+DC QA Link Cloud is MIT licensed (`LICENSE`). It ships or builds with the parts below. Every one may be redistributed.
 
 ## Fonts (in the app, `src/styles/fonts/`)
 
@@ -20,7 +20,7 @@ The OFL allows bundling the fonts with software. They are unmodified subsets and
 ## In the desktop app
 
 - **Electron** (MIT) and **Chromium** (BSD-3-Clause and others): the release zip carries Electron's `LICENSE` and
-  `LICENSES.chromium.html` beside `QA Link Cloud.exe`.
+  `LICENSES.chromium.html` beside `DC QA Link Cloud.exe`.
 - **dc-qalink's bridge** (MIT, https://github.com/lamb2k/dc-qalink): the release zip carries its `pc/` folder and
   `LICENSE` in `resources/bridge/` (pinned commit in `resources/bridge/SOURCE.txt`).
 - **The mock bridge and mock MCP server** (`resources/tools/`) are bundled with esbuild from this repository's code and

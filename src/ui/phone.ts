@@ -25,7 +25,7 @@ export class Phone {
     const menu = h('button', { class: 'icon-btn', 'aria-label': 'Commands', title: 'Commands', html: iconSvg('menu') });
     menu.addEventListener('click', () => app.palette());
     this.el = h('div', { class: 'mon' },
-      h('header', { class: 'mon-top' }, h('span', { class: 'brand' }, h('span', { class: 'brand-mark' }, 'qa'), 'QA Link Cloud'), h('span', { class: 'grow' }), this.pill, menu),
+      h('header', { class: 'mon-top' }, h('span', { class: 'brand' }, h('span', { class: 'brand-mark' }, 'qa'), 'DC QA Link Cloud'), h('span', { class: 'grow' }), this.pill, menu),
       h('div', { class: 'mon-body' },
         h('section', { class: 'card' }, h('div', { class: 'card-head' }, this.devName, h('span', { class: 'grow' }), this.devMeta), h('div', { class: 'mon-screen' }, this.screen)),
         h('section', { class: 'card' }, h('div', { class: 'card-head' }, this.chartTitle, h('span', { class: 'grow' }), this.overPill), h('div', { class: 'mon-chart' }, this.chart), this.kpis),

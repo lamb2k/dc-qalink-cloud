@@ -41,8 +41,8 @@ const flow = async () => {
   const q = window.qalink;
   try {
     // 0. control: the modem has no builds step (no network disc)
-    studio.openSetup('welcome'); await sleep(400);
-    document.querySelector('.choice[data-kind="modem"]').click(); await sleep(400);
+    studio.openSetup('welcome');
+    (await until(() => document.querySelector('.choice[data-kind="modem"]'), 10000)).click(); await sleep(400);
     const railModem = [...document.querySelectorAll('.setup-rail .step-item')].map((b) => b.textContent);
     note('control: modem shows no builds step', !railModem.some((t) => /Your builds/.test(t)), { rail: railModem });
     studio.openSetup('connection'); await sleep(400); redact(); await shot('control-modem-connection');

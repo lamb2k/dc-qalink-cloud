@@ -7,7 +7,7 @@ class Home implements Editor {
   el = h('div'); bodyClass = 'scroll';
   constructor(app: App) {
     this.el.append(empty('cable', 'No console linked',
-      'Start Flycast with the loader, or power the Dreamcast with the loader on its card. The bridge on this PC finds it on the local network or through the DreamPi, and QA Link Cloud links to the bridge.',
+      'Start Flycast with the loader, or power the Dreamcast with the loader on its card. The bridge on this PC finds it on the local network or through the DreamPi, and DC QA Link Cloud links to the bridge.',
       [btn('Connect to the bridge on this PC', () => app.cmds.run('link.local'), { primary: true, icon: 'plug' }),
         btn('Enter an address', () => { app.palette(); }, { icon: 'search', kbd: 'Ctrl K' }),
         btn('Open the demo recording', () => app.cmds.run('session.demo'), { icon: 'history' })]));

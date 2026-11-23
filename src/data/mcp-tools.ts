@@ -1,5 +1,5 @@
 // The MCP tool list: the console as tools for any agent (plan 2d). One list, versioned with the bridge API; the
-// bridge (Python, dc-qalink) serves exactly this list over stdio and a local HTTP port, QA Link Cloud serves it remotely
+// bridge (Python, dc-qalink) serves exactly this list over stdio and a local HTTP port, DC QA Link Cloud serves it remotely
 // through the job queue, and tools/mock-mcp.mjs serves it over the mock bridge as the reference implementation.
 // This file is plain data plus one small argument checker, written in erasable TypeScript so Node can load it as is.
 //

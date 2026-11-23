@@ -241,7 +241,7 @@ export class SetupPage implements Page {
           const c = h('button', { class: 'choice', 'aria-pressed': String(on), 'data-kind': k, html: iconSvg(ic, 20) }, h('span', { class: 't' }, t), h('span', { class: 'box', html: on ? iconSvg('check') : '' }), h('span', { class: 'd' }, d));
           c.addEventListener('click', () => this.setKind(k)); return c;
         };
-        return [lead('QA Link Cloud links this PC to a Dreamcast while it runs: push a build, watch its timings live, grab its screen, warp, pause and step. It works offline, on this PC\'s network.'),
+        return [lead('DC QA Link Cloud links this PC to a Dreamcast while it runs: push a build, watch its timings live, grab its screen, warp, pause and step. It works offline, on this PC\'s network.'),
           h('div', { class: 'section-title' }, 'How is your Dreamcast connected?'),
           h('div', { class: 'choice-grid three' },
             choice('bba', 'cable', 'Broadband adapter', 'The fastest: live data every picture, and builds can read their disc from this PC.'),
@@ -272,7 +272,7 @@ export class SetupPage implements Page {
           seg,
           this.s.transport === 'modem' ? call('info', '', h('b', null, 'No network disc. '), MODEM_NO_DISC) : null,
           q ? (this.nets.length ? h('div', { class: 'card' }, h('div', { class: 'card-body flush' }, t)) : h('div', { class: 'faint' }, 'Reading this PC\'s network...')) : h('div', { class: 'callout', html: iconSvg('app-window') }, h('p', null, 'The desktop app lists this PC\'s network and picks the one the console can reach. On the web page, the bridge picks it.')),
-          call('shield', 'warn', h('b', null, 'One Windows question may appear. '), 'When the bridge first listens for the console, Windows can ask whether QA Link Cloud may use networks. Tick ', h('b', null, 'Private networks'), ', leave Public unticked, and choose ', h('b', null, 'Allow'), '. The app changes no firewall settings itself.')];
+          call('shield', 'warn', h('b', null, 'One Windows question may appear. '), 'When the bridge first listens for the console, Windows can ask whether DC QA Link Cloud may use networks. Tick ', h('b', null, 'Private networks'), ', leave Public unticked, and choose ', h('b', null, 'Allow'), '. The app changes no firewall settings itself.')];
       }
       case 'loader': return [
         lead('The loader is a small program the Dreamcast boots from the SD card once. It waits for builds from this PC, runs them, and comes back when they end, so you never swap cards again.'),
@@ -329,7 +329,7 @@ export class SetupPage implements Page {
           h('div', { class: 'card' }, h('div', { class: 'card-body' }, h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'Local MCP'), h('div', { class: 'd' }, 'Tools at the "control" level: they can read and steer, not push code. Raise it in the command line on purpose.')),
             h('div', { class: 'ctl' }, q ? switchEl(this.mcpOn, 'Local MCP', async (v) => { await q.setSetting('mcpLocal', v); this.mcpOn = v; this.bump(); }) : deskOnly())))),
           snippet(A, 'Claude Code: run once in a terminal', sn.claude), snippet(A, 'Codex: add to ~/.codex/config.toml', sn.codex),
-          h('div', { class: 'faint', style: 'font-size:var(--fs-xs)' }, 'The remote link stays off: when on, it lets a browser elsewhere and cloud agents reach this console through QA Link Cloud. Settings has the switch.')];
+          h('div', { class: 'faint', style: 'font-size:var(--fs-xs)' }, 'The remote link stays off: when on, it lets a browser elsewhere and cloud agents reach this console through DC QA Link Cloud. Settings has the switch.')];
       }
       case 'done': {
         const items: [string, string][] = [
