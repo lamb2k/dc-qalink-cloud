@@ -12,10 +12,11 @@ class Log implements Editor {
   private rows = h('div', { class: 'vlist-rows' });
   private input = h('input', { class: 'input mono', placeholder: 'Filter lines (text)', 'aria-label': 'Filter log lines', spellcheck: 'false' });
   private onlyWarn = false;
+  private onlySerial = false;
   private follow = true;
   private w = new Watch();
   private idx: number[] = []; private builtFor = '';
-  private followBtn: HTMLButtonElement; private warnBtn: HTMLButtonElement;
+  private followBtn: HTMLButtonElement; private warnBtn: HTMLButtonElement; private serialBtn: HTMLButtonElement;
   private scrollV = 0;
   constructor(private app: App) {
     this.list.append(this.spacer); this.spacer.append(this.rows);
@@ -23,8 +24,9 @@ class Log implements Editor {
     this.el = h('div', { class: 'with-bar' }, bar, h('div', { class: 'grow-body' }, this.list));
     this.followBtn = toolBtn('crosshair', 'Follow the playhead', () => { this.follow = !this.follow; this.followBtn.classList.toggle('is-on', this.follow); this.scrollV++; }, true);
     this.warnBtn = toolBtn('triangle-alert', 'Only warnings and errors', () => { this.onlyWarn = !this.onlyWarn; this.warnBtn.classList.toggle('is-on', this.onlyWarn); this.builtFor = ''; });
+    this.serialBtn = toolBtn('terminal', 'Only what the program printed (serial)', () => { this.onlySerial = !this.onlySerial; this.serialBtn.classList.toggle('is-on', this.onlySerial); this.builtFor = ''; });
     const copy = toolBtn('copy', 'Copy the shown lines', () => { const st = app.store; void navigator.clipboard?.writeText(this.idx.map((i) => `${st.logs[i].n ?? ''}\t${st.logs[i].lv}\t${st.logs[i].msg}`).join('\n')); app.toast('ok', `Copied ${this.idx.length} lines`); });
-    this.tools = [this.warnBtn, this.followBtn, copy];
+    this.tools = [this.serialBtn, this.warnBtn, this.followBtn, copy];
     this.input.addEventListener('input', () => { this.builtFor = ''; });
     this.list.addEventListener('scroll', () => { this.scrollV++; });
     this.list.addEventListener('wheel', () => { if (this.follow) { this.follow = false; this.followBtn.classList.remove('is-on'); } }, { passive: true });
@@ -34,10 +36,10 @@ class Log implements Editor {
   meta(): string { const n = this.app.store.logs.length; return this.idx.length === n ? `${int(n)} lines` : `${int(this.idx.length)} of ${int(n)} lines`; }
   frame(force: boolean): void {
     const st = this.app.store; const q = this.input.value.trim().toLowerCase();
-    const key = `${st.meta?.id}|${st.logs.length}|${q}|${this.onlyWarn}`;
+    const key = `${st.meta?.id}|${st.logs.length}|${st.logsDropped}|${q}|${this.onlyWarn}|${this.onlySerial}`;
     if (key !== this.builtFor) {
       this.builtFor = key; this.idx = [];
-      st.logs.forEach((l, i) => { if (this.onlyWarn && l.lv !== 'warn' && l.lv !== 'err') return; if (q && !l.msg.toLowerCase().includes(q)) return; this.idx.push(i); });
+      st.logs.forEach((l, i) => { if (this.onlyWarn && l.lv !== 'warn' && l.lv !== 'err') return; if (this.onlySerial && l.lv !== 'serial') return; if (q && !l.msg.toLowerCase().includes(q)) return; this.idx.push(i); });
       force = true;
     }
     if (!this.w.changed(this.app, `${this.scrollV}|${key}`) && !force) return;
@@ -57,7 +59,7 @@ class Log implements Editor {
     for (let k = a; k < b; k++) {
       const i = this.idx[k]; const l: LogRecord = st.logs[i];
       const cls = `ln ${l.lv}${k === at ? ' is-cursor' : ''}${i > cur ? ' after' : ''}`;
-      html += `<div class="${cls}"${l.n != null ? ` data-n="${l.n}"` : ''}><span class="tick">${l.n ?? (l.ph === 'load' ? 'load' : '')}</span><span class="lv">${l.lv === 'warn' ? '!' : l.lv === 'err' ? 'x' : l.lv === 'stub' ? 's' : ''}</span><span class="tx" title="${esc(l.msg)}">${esc(l.msg)}</span></div>`;
+      html += `<div class="${cls}"${l.n != null ? ` data-n="${l.n}"` : ''}><span class="tick">${l.n ?? (l.ph === 'load' ? 'load' : '')}</span><span class="lv">${l.lv === 'warn' ? '!' : l.lv === 'err' ? 'x' : l.lv === 'stub' ? 's' : l.lv === 'serial' ? '&gt;' : ''}</span><span class="tx" title="${esc(l.msg)}">${esc(l.msg)}</span></div>`;
     }
     this.rows.innerHTML = html;
     if (!total) this.rows.innerHTML = `<div class="ln"><span></span><span></span><span class="tx">${st.logs.length ? 'No line matches the filter.' : 'No log lines yet.'}</span></div>`;

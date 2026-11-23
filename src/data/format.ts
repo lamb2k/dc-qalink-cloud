@@ -70,15 +70,17 @@ export interface MetaRecord {
 export type XValue = number | string | number[];
 export interface RowRecord { t: 'row'; n: number; ph: Record<string, number>; f?: number; x?: Record<string, XValue> }
 export interface CounterRecord { t: 'ctr'; n: number; v: Record<string, number> }
-export type LogLevel = 'info' | 'warn' | 'err' | 'stub';
+export type LogLevel = 'info' | 'warn' | 'err' | 'stub' | 'serial';
 export interface LogRecord { t: 'log'; n: number | null; lv: LogLevel; ph?: 'load' | 'play'; msg: string }
+/** A line the program printed (stdout / dbglog), as the bridge streams it and session files keep it. */
+export interface LineRecord { t: 'line'; text: string; run?: string; seq?: number }
 export interface TraceRecord { t: 'trace'; lane: string; n: number; d?: number; label: string }
 /** A screen grab. kind "reference" marks a picture to compare against (another build, another device); the
  *  console screen shows only console grabs. */
 export interface GrabRecord { t: 'grab'; n: number; w: number; h: number; fmt: 'png'; data?: string; url?: string; label?: string; kind?: 'console' | 'reference'; build?: string }
 export interface EndRecord { t: 'end'; n: number; reason?: string }
 
-export type SessionRecord = MetaRecord | RowRecord | CounterRecord | LogRecord | TraceRecord | GrabRecord | EndRecord;
+export type SessionRecord = MetaRecord | RowRecord | CounterRecord | LogRecord | LineRecord | TraceRecord | GrabRecord | EndRecord;
 
 export class SessionFormatError extends Error {}
 

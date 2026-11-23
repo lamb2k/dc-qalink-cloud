@@ -11,7 +11,7 @@ import { Emitter, deviceLabel, type Source, type SourceInfo, type SourceState } 
 import { SessionStore } from './store';
 
 const RETRY_S = 4;
-const KNOWN = new Set(['meta', 'row', 'ctr', 'log', 'trace', 'grab', 'end']);
+const KNOWN = new Set(['meta', 'row', 'ctr', 'log', 'line', 'trace', 'grab', 'end']);
 
 function toBase64(b: Uint8Array): string {
   let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));

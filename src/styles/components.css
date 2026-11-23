@@ -198,6 +198,7 @@ body {
 .log .ln .lv { color: var(--text-faint); }
 .log .ln.warn .lv, .log .ln.warn .tx { color: var(--warn); }
 .log .ln.stub .tx { color: var(--text-muted); }
+.log .ln.serial .tx { font-family: var(--font-mono); }
 .log .ln.is-cursor { background: var(--bg-selected); }
 .log .tx { overflow: hidden; text-overflow: ellipsis; }
 
