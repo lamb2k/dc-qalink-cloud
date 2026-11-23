@@ -10,7 +10,7 @@ const H = { 'X-Contract': String(CONTRACT) };
 
 async function answer<T>(r: Response): Promise<T> {
   const v = r.headers.get('content-type')?.includes('json') ? await r.json() : await r.text();
-  if (r.status === 409) throw new Error(`the bridge speaks another contract (${(v as { ours?: number })?.ours ?? '?'}); this app speaks ${CONTRACT}: update one of them`);
+  if (r.status === 409 && /contract/.test(JSON.stringify(v))) throw new Error(`the bridge speaks another contract (${(v as { ours?: number })?.ours ?? '?'}); this app speaks ${CONTRACT}: update one of them`);
   if (!r.ok) throw Object.assign(new Error(typeof v === 'object' && v && 'error' in v ? String((v as { error: string }).error) : `bridge answered ${r.status}`), { status: r.status });
   return v as T;
 }

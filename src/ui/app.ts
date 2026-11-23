@@ -20,6 +20,7 @@ import { SettingsPage } from '../pages/settings';
 import { SetupPage, type StepId } from '../pages/setup';
 import { DEFAULT_BRIDGE } from '../data/bridge-client';
 import { desktop } from '../platform/desktop';
+import BRAND_SVG from '../../assets/icon/dc-qalink-cloud.svg?raw';
 
 export interface AppOptions { ws?: Workspace; theme?: 'dark' | 'light'; phone?: boolean; demoUrl: string; privateUrl?: string; bridge?: string }
 
@@ -201,7 +202,7 @@ export class App implements LayoutHost {
     const themeBtn = h('button', { class: 'icon-btn', title: `Light or dark theme (T)`, 'aria-label': 'Switch theme', html: iconSvg(this.theme === 'dark' ? 'sun' : 'moon') });
     themeBtn.addEventListener('click', () => this.cmds.run('theme.toggle'));
     this.top.replaceChildren(
-      h('span', { class: 'brand', title: 'QA Link Cloud, built on dc-qalink 0.2' }, h('span', { class: 'brand-mark' }, 'qa'), h('span', { class: 'brand-name' }, 'QA Link Cloud')),
+      h('span', { class: 'brand', title: 'DC QA Link Cloud, built on dc-qalink 0.2' }, h('span', { class: 'brand-mark', html: BRAND_SVG }), h('span', { class: 'brand-name' }, 'DC QA Link Cloud')),
       tabs, h('span', { class: 'grow' }),
       h('span', { class: 'top-link', html: pill }, what ? h('span', { class: 'muted ellipsis', title: what }, what) : null),
       h('span', { class: 'sep-v' }), cmdBtn, themeBtn);

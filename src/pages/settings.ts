@@ -5,7 +5,8 @@ import { BRIDGE_API_VERSION, ENDPOINTS, uiDevice, type C1Device, type DeviceInfo
 import { bget, DEFAULT_BRIDGE } from '../data/bridge-client';
 import { SESSION_FORMAT_VERSION } from '../data/format';
 import { MCP_TOOLS, MCP_TOOLS_VERSION } from '../data/mcp-tools';
-import { desktop, type AppInfo, type AppSettings, type NetIf, type ProgramStatus } from '../platform/desktop';
+import { desktop, type AppInfo, type AppSettings, type BuildsInfo, type Connection, type NetIf, type ProgramStatus } from '../platform/desktop';
+import { MODEM_NO_DISC } from './setup';
 import { esc, h, iconSvg, save, store } from '../ui/dom';
 import { btn, empty } from '../editors/base';
 import type { Page } from './page';
@@ -13,11 +14,11 @@ import type { Page } from './page';
 export type RemoteState = 'off' | 'connecting' | 'on' | 'refused';
 export const remote = { state: (new URLSearchParams(location.search).get('remote') as RemoteState) || 'off', reason: '', v: 0 };
 if (!['off', 'connecting', 'on', 'refused'].includes(remote.state)) remote.state = 'off';
-if (remote.state === 'refused') remote.reason = 'No QA Link Cloud account is set up on this PC yet (milestone L3b).';
+if (remote.state === 'refused') remote.reason = 'No DC QA Link Cloud account is set up on this PC yet (milestone L3b).';
 export function setRemote(on: boolean): void {
   if (!on) { remote.state = 'off'; remote.reason = ''; remote.v++; return; }
   remote.state = 'connecting'; remote.reason = ''; remote.v++;
-  setTimeout(() => { if (remote.state !== 'connecting') return; remote.state = 'refused'; remote.reason = 'No QA Link Cloud account is set up on this PC yet (milestone L3b). Nothing left this PC.'; remote.v++; }, 1600);
+  setTimeout(() => { if (remote.state !== 'connecting') return; remote.state = 'refused'; remote.reason = 'No DC QA Link Cloud account is set up on this PC yet (milestone L3b). Nothing left this PC.'; remote.v++; }, 1600);
 }
 
 export function mcpSnippets(info: AppInfo | null): { claude: string; codex: string } {
@@ -44,12 +45,12 @@ export class SettingsPage implements Page {
   el = h('div', { class: 'page' });
   private v = 0; private built = '';
   private info: AppInfo | null = null; private settings: AppSettings | null = null; private progs: ProgramStatus[] = []; private nets: NetIf[] = [];
-  private devices: DeviceInfo[] | null = null; private devFor = '';
+  private devices: DeviceInfo[] | null = null; private devFor = ''; private builds: BuildsInfo | null = null;
   private off: (() => void) | null = null;
   constructor(private app: App) {
     const q = desktop();
     if (q) {
-      void Promise.all([q.info(), q.settings(), q.programs(), q.networkInterfaces()]).then(([i, s, p, n]) => { this.info = i; this.settings = s; this.progs = p; this.nets = n; this.v++; });
+      void Promise.all([q.info(), q.settings(), q.programs(), q.networkInterfaces(), q.builds()]).then(([i, s, p, n, b]) => { this.info = i; this.settings = s; this.progs = p; this.nets = n; this.builds = b; this.v++; });
       this.off = q.onProgram((s) => { this.progs = this.progs.map((x) => (x.id === s.id ? s : x)); this.v++; });
     }
   }
@@ -62,10 +63,10 @@ export class SettingsPage implements Page {
   frame(): void {
     void this.loadDevices();
     const k = `${this.v}|${remote.v}|${this.app.themeV}|${this.app.source.state}`; if (k === this.built) return; this.built = k;
-    const head = h('div', { class: 'page-head' }, h('div', null, h('div', { class: 'eyebrow' }, 'QA Link Cloud'), h('h1', null, 'Settings'), h('p', null, desktop() ? 'Saved in the app\'s own folder on this PC.' : 'Saved in this browser. The desktop app adds programs, files and this PC\'s network.')),
+    const head = h('div', { class: 'page-head' }, h('div', null, h('div', { class: 'eyebrow' }, 'DC QA Link Cloud'), h('h1', null, 'Settings'), h('p', null, desktop() ? 'Saved in the app\'s own folder on this PC.' : 'Saved in this browser. The desktop app adds programs, files and this PC\'s network.')),
       h('div', { class: 'actions' }, btn('Set up a console', () => this.app.cmds.run('setup.open'), { icon: 'sparkles', primary: true })));
     const col = (...c: HTMLElement[]) => h('div', { class: 'col' }, ...c);
-    this.el.replaceChildren(head, h('div', { class: 'grid-2' }, col(this.devicesCard(), this.programsCard(), this.networkCard()), col(this.remoteCard(), this.appearanceCard(), this.aboutCard())), this.agentsCard());
+    this.el.replaceChildren(head, h('div', { class: 'grid-2' }, col(this.buildsCard(), this.devicesCard(), this.programsCard(), this.networkCard()), col(this.remoteCard(), this.appearanceCard(), this.aboutCard())), this.agentsCard());
   }
 
   private devicesCard(): HTMLElement {
@@ -80,21 +81,39 @@ export class SettingsPage implements Page {
       h('div', { class: 'card-foot' }, h('span', null, 'Consoles are found by the loader\'s beacon on the local network.'), btn('Find a console', () => this.app.openSetup('find'), { small: true, icon: 'search' })));
   }
 
+  /** the set-up's answers, editable: how the console connects and the one folder it sees */
+  private buildsCard(): HTMLElement {
+    const q = desktop(); const b = this.builds; const k = (this.settings?.connection || '') as Connection | '';
+    const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'How the Dreamcast connects' });
+    for (const [t, l] of [['bba', 'Adapter'], ['modem', 'Modem'], ['flycast', 'Flycast']] as const) {
+      const x = h('button', { class: k === t ? 'is-on' : '', 'aria-pressed': String(k === t), disabled: !q }, l);
+      x.addEventListener('click', async () => { if (!q) return; this.settings = await q.setSetting('connection', t); this.builds = await q.builds(); this.v++; this.app.toast('ok', 'Connection saved', 'A running bridge restarts with it.'); });
+      seg.append(x);
+    }
+    const pick = (sample: boolean) => async () => { if (!q) return; try { this.builds = sample ? await q.useSample() : await q.chooseBuilds(); this.v++; } catch (e) { this.app.toast('err', 'Could not use that folder', String(e)); } };
+    const body = h('div', { class: 'card-body' },
+      h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'How the Dreamcast connects'), h('div', { class: 'd' }, k === 'modem' ? MODEM_NO_DISC : 'Asked by the set-up; change it here.')), h('div', { class: 'ctl' }, q ? seg : deskOnly())),
+      h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'Builds folder'), h('div', { class: 'd mono' }, b?.root ? (b.sample ? `the sample game: ${b.root}` : b.root) : 'not chosen'), h('div', { class: 'd' }, b?.root ? `Only this folder is shared with the console (${b.shared}).` : 'The bridge shares nothing until a folder is chosen.')),
+        h('div', { class: 'ctl' }, q ? btn('Choose...', pick(false), { small: true, icon: 'folder-open' }) : deskOnly(), q && b?.sampleAvailable && !b.sample ? btn('Use the sample', pick(true), { small: true, icon: 'gamepad-2' }) : null)));
+    return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('folder-open') }, h('h2', null, 'Console and builds'), h('span', { class: 'meta' }, b?.programs.length ? `${b.programs.length} program${b.programs.length > 1 ? 's' : ''}` : '')), body,
+      h('div', { class: 'card-foot' }, h('span', null, 'The bridge serves the folder as /pc files, the network disc overlay and the asset root.'), btn('Run the set-up again', () => this.app.cmds.run('setup.open'), { small: true, icon: 'sparkles' })));
+  }
+
   private remoteCard(): HTMLElement {
     const s = remote.state;
     const pill = s === 'on' ? `<span class="pill ok">${iconSvg('circle-check')}On</span>` : s === 'connecting' ? `<span class="pill warn">${iconSvg('loader-circle', 16, 'spin')}Connecting</span>` : s === 'refused' ? `<span class="pill err">${iconSvg('circle-x')}Refused</span>` : `<span class="pill">${iconSvg('circle')}Off</span>`;
     const sw = switchEl(s === 'on' || s === 'connecting', 'Remote link', (v) => setRemote(v), { busy: s === 'connecting', refused: s === 'refused' });
     const say: Record<RemoteState, string> = {
       off: 'Nothing leaves this PC. The console, the bridge and this app work on the local network only.',
-      connecting: 'Opening one outgoing connection to QA Link Cloud. No port is opened on this network.',
-      on: 'Linked to QA Link Cloud through one outgoing connection. A browser elsewhere and cloud agents with a token can reach this console. Every command is logged with who sent it.',
-      refused: remote.reason || 'QA Link Cloud refused the connection.',
+      connecting: 'Opening one outgoing connection to DC QA Link Cloud. No port is opened on this network.',
+      on: 'Linked to DC QA Link Cloud through one outgoing connection. A browser elsewhere and cloud agents with a token can reach this console. Every command is logged with who sent it.',
+      refused: remote.reason || 'DC QA Link Cloud refused the connection.',
     };
     const states = h('div', { class: 'remote-states' }, ...(['off', 'connecting', 'on', 'refused'] as RemoteState[]).map((x) => h('div', { class: `remote-state${x === s ? ' is-current' : ''}`, html: `<span class="pill${x === 'on' ? ' ok' : x === 'connecting' ? ' warn' : x === 'refused' ? ' err' : ''}">${x === 'off' ? 'Off' : x === 'on' ? 'On' : x === 'connecting' ? 'Connecting' : 'Refused'}</span>` },
       x === 'off' ? 'Local only' : x === 'connecting' ? 'Dialling out' : x === 'on' ? 'Reachable with sign-in' : 'Not set up, or signed out')));
     return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('globe') }, h('h2', null, 'Remote link'), h('span', { class: 'meta', html: pill })),
       h('div', { class: 'card-body remote' },
-        h('div', { class: 'remote-head' }, sw, h('div', null, h('div', { class: 't' }, 'Reach this console from elsewhere'), h('div', { class: 'faint', style: 'font-size:var(--fs-xs)' }, 'QA Link Cloud on Cloudflare: sign-in on every page and call'))),
+        h('div', { class: 'remote-head' }, sw, h('div', null, h('div', { class: 't' }, 'Reach this console from elsewhere'), h('div', { class: 'faint', style: 'font-size:var(--fs-xs)' }, 'DC QA Link Cloud on Cloudflare: sign-in on every page and call'))),
         h('div', { class: `callout${s === 'refused' ? ' err' : s === 'on' ? ' ok' : s === 'connecting' ? ' warn' : ''}`, html: iconSvg(s === 'refused' ? 'circle-x' : s === 'on' ? 'circle-check' : 'info') }, h('p', null, say[s], s === 'on' && new URLSearchParams(location.search).get('remote') === 'on' ? h('b', null, ' Design preview: nothing is connected.') : null)),
         states,
         h('dl', { class: 'kv' }, h('dt', null, 'Address'), h('dd', null, 'not set up (milestone L3b)'), h('dt', null, 'When on, leaves this PC'), h('dd', null, 'live data, grabs and sessions you upload'), h('dt', null, 'Never leaves'), h('dd', null, 'files on disk you did not send'))));
@@ -166,8 +185,9 @@ export class SettingsPage implements Page {
     const i = this.info;
     return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('info') }, h('h2', null, 'About')),
       h('div', { class: 'card-body' }, h('dl', { class: 'kv' },
-        h('dt', null, 'App'), h('dd', null, i ? `QA Link Cloud ${i.version}, desktop${i.packaged ? '' : ' (from source)'}` : 'QA Link Cloud, web page'),
+        h('dt', null, 'App'), h('dd', null, i ? `DC QA Link Cloud ${i.version}, desktop${i.packaged ? '' : ' (from source)'}` : 'DC QA Link Cloud, web page'),
         h('dt', null, 'Built on'), h('dd', null, 'dc-qalink 0.2 (in progress)'),
+        h('dt', null, 'Notice'), h('dd', null, 'Independent tool; not affiliated with Sega.'),
         h('dt', null, 'Bridge API'), h('dd', null, BRIDGE_API_VERSION),
         h('dt', null, 'Session format'), h('dd', null, String(SESSION_FORMAT_VERSION)),
         h('dt', null, 'MCP tool list'), h('dd', null, MCP_TOOLS_VERSION),

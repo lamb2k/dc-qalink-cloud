@@ -9,7 +9,7 @@ outputs as JSON Schema. It moves to dc-qalink beside the bridge API when the bri
   on stdio. `tests/mcp.test.ts` lists the tools and calls `grab_screen`, `live_summary` and `push_build`.
 - The bridge (Python, dc-qalink): the same list with the Python MCP SDK, on stdio and a local HTTP port. It loads
   the list from a JSON export of this file (`node tools/gen-mcp-doc.mjs --json`), so names and schemas cannot drift.
-- QA Link Cloud (L3b): the same list over HTTP with sign-in, each call through the job queue.
+- DC QA Link Cloud (L3b): the same list over HTTP with sign-in, each call through the job queue.
 
 **Permission levels.** A server is started at one level and lists and accepts only the tools at or below it:
 read (data, sessions), control (warp, pause, step, pad, grab, reset, assets), run code (push and run a build).

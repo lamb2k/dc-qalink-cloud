@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld('qalink', Object.freeze({
   onProgram: listen('prog:status', (cb, v) => cb(v)),
   chooseFlycast: () => inv('prog:choose-flycast'),
   prepareFlycast: () => inv('prog:prepare-flycast'),
+  builds: () => inv('builds:info'),
+  chooseBuilds: () => inv('builds:choose'),
+  useSample: () => inv('builds:use-sample'),
+  readBuild: (name) => inv('builds:read', String(name)),
+  swapSampleTexture: () => inv('builds:swap-sample-texture'),
   settings: () => inv('settings:get'),
   setSetting: (key, value) => inv('settings:set', String(key), value),
 }));

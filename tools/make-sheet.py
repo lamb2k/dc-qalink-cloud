@@ -23,7 +23,7 @@ rows = [thumbs[i:i + 2] for i in range(0, len(thumbs), 2)]
 H = PAD + 34 + 26 + sum(max(t.height for t, _ in r) + 30 + GAP for r in rows) + PAD
 sheet = Image.new('RGB', (W, H), BG); d = ImageDraw.Draw(sheet)
 d.text((PAD, PAD), title, font=ft, fill=(245, 246, 247))
-d.text((PAD, PAD + 34), 'QA Link Cloud (ql-app), dark, 1440x900. Synthetic demo data and the mock bridge; no console. Finished, unaudited.', font=fs, fill=MUTED)
+d.text((PAD, PAD + 34), 'DC QA Link Cloud (ql-app), dark, 1440x900. Synthetic demo data and the mock bridge; no console. Finished, unaudited.', font=fs, fill=MUTED)
 y = PAD + 34 + 26 + 8
 for r in rows:
     x = PAD

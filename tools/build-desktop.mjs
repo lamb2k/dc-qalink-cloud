@@ -26,6 +26,12 @@ const BRIDGE_REF = ri > 0 ? process.argv[ri + 1] : process.env.QALINK_BRIDGE_REF
 const pi = process.argv.indexOf('--python');
 const PYEMBED = pi > 0 ? resolve(process.argv[pi + 1]) : process.env.QALINK_PYTHON_EMBED ? resolve(process.env.QALINK_PYTHON_EMBED) : '';
 if (PYEMBED && !BRIDGE) throw new Error('--python needs --bridge (the Python runs the bundled bridge)');
+// --sample <dir>: dc-qalink's sample game, staged (make -C example/demo3d OUT=build stage: build/stage), bundled as
+// resources/sample for the set-up's "Start with the sample game". QALINK_SAMPLE_SRC works too; without it the app looks
+// beside the bridge (example/demo3d/build/stage) and offers no sample when there is none.
+const si = process.argv.indexOf('--sample');
+const SAMPLE = si > 0 ? resolve(process.argv[si + 1]) : process.env.QALINK_SAMPLE_SRC ? resolve(process.env.QALINK_SAMPLE_SRC) : '';
+if (SAMPLE && !existsSync(join(SAMPLE, 'demo3d.elf'))) throw new Error(`--sample ${SAMPLE}: no demo3d.elf there (stage it first)`);
 let pyInfo = null;   // the bundled Python's versions, when --python is given
 const CHANNEL = pkg_channel();
 function pkg_channel() { try { return JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).releaseChannel ?? ''; } catch { return ''; } }
@@ -55,6 +61,7 @@ cpSync(join(root, 'public/demo-session.jsonl'), join(STAGE, 'res/tools/demo-sess
 cpSync(join(root, 'build/icon.png'), join(STAGE, 'res/icon.png'));
 
 // dc-qalink's bridge (MIT), only its pc/ folder and licence: Python sources and the MCP tool list, no caches
+if (SAMPLE) cpSync(SAMPLE, join(STAGE, 'res/sample'), { recursive: true });
 if (BRIDGE) {
   if (!existsSync(join(BRIDGE, 'pc', 'qalink_bridge.py'))) throw new Error(`--bridge ${BRIDGE}: no pc/qalink_bridge.py there`);
   cpSync(join(BRIDGE, 'pc'), join(STAGE, 'res/bridge/pc'), { recursive: true, filter: (s) => !/[\\/](__pycache__|ev)([\\/]|$)|\.pyc$/.test(s.slice(BRIDGE.length)) });
@@ -69,10 +76,10 @@ if (BRIDGE) {
   }
   writeFileSync(join(STAGE, 'res/bridge/SOURCE.txt'), `dc-qalink bridge, https://github.com/lamb2k/dc-qalink commit ${BRIDGE_REF} (MIT, see LICENSE).
 ${pyInfo
-    ? `Run by QA Link Cloud with the bundled Python ${pyInfo.python} (python/, the official Windows embeddable package) with numpy ${pyInfo.numpy},
+    ? `Run by DC QA Link Cloud with the bundled Python ${pyInfo.python} (python/, the official Windows embeddable package) with numpy ${pyInfo.numpy},
 Pillow ${pyInfo.pillow} and mcp ${pyInfo.mcp} in python/Lib/site-packages; each package's licence is in its .dist-info folder there.
 Command: python/python.exe -I pc/qalink_bridge.py`
-    : `Run by QA Link Cloud with the system Python 3.10+: python -I pc/qalink_bridge.py. Its MCP part needs: pip install mcp`}
+    : `Run by DC QA Link Cloud with the system Python 3.10+: python -I pc/qalink_bridge.py. Its MCP part needs: pip install mcp`}
 `);
   const theirs = readFileSync(join(STAGE, 'res/bridge/pc/bridge/mcp-tools.json'), 'utf8');
   const ours = execFileSync(process.execPath, [join(root, 'tools/gen-mcp-doc.mjs'), '--json'], { encoding: 'utf8' });
@@ -89,17 +96,17 @@ rmSync(OUT, { recursive: true, force: true });
 const [dir] = await packager({
   dir: join(STAGE, 'app'), out: OUT, name: pkg.productName, executableName: pkg.productName, platform: 'win32', arch: 'x64', electronVersion,
   icon: join(root, 'build/icon.ico'), asar: true, prune: false, overwrite: true, quiet: true,
-  extraResource: [join(STAGE, 'res/tools'), join(STAGE, 'res/icon.png'), ...(BRIDGE ? [join(STAGE, 'res/bridge')] : [])],
+  extraResource: [join(STAGE, 'res/tools'), join(STAGE, 'res/icon.png'), ...(BRIDGE ? [join(STAGE, 'res/bridge')] : []), ...(SAMPLE ? [join(STAGE, 'res/sample')] : [])],
   appVersion: pkg.version, appCopyright: 'MIT licence; built on dc-qalink',
   win32metadata: { CompanyName: 'dc-qalink', FileDescription: pkg.productName, ProductName: pkg.productName, InternalName: pkg.name },
 });
 // this app's licence and notices beside Electron's own LICENSE and LICENSES.chromium.html
-cpSync(join(root, 'LICENSE'), join(dir, 'LICENSE.QA-Link-Cloud.txt'));
+cpSync(join(root, 'LICENSE'), join(dir, 'LICENSE.DC-QA-Link-Cloud.txt'));
 cpSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(dir, 'THIRD_PARTY_NOTICES.md'));
 // only the English locale ships (the UI is English); Chromium falls back to it
 for (const f of readdirSync(join(dir, 'locales'))) if (f !== 'en-US.pak') rmSync(join(dir, 'locales', f));
 const size = (p) => { let n = 0; const w = (d) => { for (const f of readdirSync(d)) { const q = join(d, f); const s = statSync(q); if (s.isDirectory()) w(q); else n += s.size; } }; statSync(p).isDirectory() ? w(p) : (n = statSync(p).size); return n; };
-const zip = join(OUT, `QA-Link-Cloud-${pkg.version}${CHANNEL ? `-${CHANNEL}` : ''}-win-x64.zip`);
+const zip = join(OUT, `DC-QA-Link-Cloud-${pkg.version}${CHANNEL ? `-${CHANNEL}` : ''}-win-x64.zip`);
 // Windows' own tar (bsdtar) writes the zip; a GNU tar earlier on PATH (Git Bash) would read "E:" as a host
 const TAR = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 execFileSync(TAR, ['-a', '-c', '-f', zip, '-C', OUT, dir.split(/[\\/]/).pop()], { stdio: 'inherit' });

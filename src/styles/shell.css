@@ -1,4 +1,4 @@
-/* QA Link Cloud shell: workspace frame, split areas, menus, palette, timeline, editors. Tokens only. */
+/* DC QA Link Cloud shell: workspace frame, split areas, menus, palette, timeline, editors. Tokens only. */
 button { font: inherit; }
 [hidden] { display: none !important; }
 .area-head .ed { white-space: nowrap; flex: none; max-width: 60%; }

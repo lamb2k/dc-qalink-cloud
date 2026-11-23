@@ -1,4 +1,4 @@
-# QA Link Cloud
+# DC QA Link Cloud
 
 The desktop companion to [dc-qalink](https://github.com/lamb2k/dc-qalink): link a Dreamcast (or Flycast) to your PC
 and see live timings, grab the screen, push and run builds, send commands and keep sessions. Agents such as Claude
@@ -30,9 +30,9 @@ Code or Codex can drive the console through MCP.
 ## Quick start
 
 **From the release zip**
-1. Download `QA-Link-Cloud-0.1.0-preview-win-x64.zip` from
+1. Download `DC-QA-Link-Cloud-0.1.0-preview-win-x64.zip` from
    [Releases](https://github.com/lamb2k/dc-qalink-cloud/releases) and check it against `SHA256SUMS`.
-2. Unzip anywhere and run `QA Link Cloud.exe`. It is portable and unsigned, so Windows SmartScreen may ask once.
+2. Unzip anywhere and run `DC QA Link Cloud.exe`. It is portable and unsigned, so Windows SmartScreen may ask once.
 3. The first run opens **Set up a console**. Skip it to explore the built-in demo session.
 
 The zip carries dc-qalink's bridge (a pinned commit of `v0.2`, MIT) and its own Python in `resources\bridge`.
@@ -49,11 +49,23 @@ From source the app starts the mock bridge unless it finds dc-qalink: set `QALIN
 
 ## Setup flow
 
-Seven steps: welcome, connection, loader disc, Flycast, find the console, first test, agents. Each step can be
-skipped and is kept across restarts. Open it again from Settings or `Ctrl K` > "Set up a console".
+A few questions, then the sample game on your Dreamcast (or Flycast) with live data and a screen grab:
+1. **How is your Dreamcast connected?** Broadband adapter, modem with a DreamPi, or Flycast only.
+2. **Where do you keep your builds?** A folder picker, or **Start with the sample game** (dc-qalink's `example/demo3d`,
+   a small 3D game). That one folder is all the console sees: programs to push, `/pc` files and the network disc.
+   Over the modem there is no such step: builds are pushed only, and the network disc is skipped (too slow).
+3. The network, the loader on the SD card (GDEMU, openMenu; the app never writes a card), Flycast, find the console.
+4. **First run:** push the sample, live data, a screen grab.
+5. **Try it:** swap the sample's floor texture and push again (no SD card change), open the in-game menu, press its
+   crash button (the report and registers come back), RESET.
 
-![First test step of the setup flow: the test program passed and its screen grab](docs/images/setup-test.png)
-<sub>Setup flow, first test. Mock bridge, demo data (synthetic).</sub>
+Each step can be skipped and is kept across restarts; Settings, "Console and builds", keeps every answer editable.
+Open it again from Settings or `Ctrl K` > "Set up a console".
+
+![The set-up: how the Dreamcast connects](docs/images/onboarding-connection.png)
+![The set-up: the sample game as the builds folder](docs/images/onboarding-builds.png)
+<sub>Setup flow, the first two questions (test mode, offscreen). Paths and addresses shown are
+examples (192.0.2.x).</sub>
 
 ## Tour
 
@@ -97,17 +109,17 @@ The desktop app, dark theme, 1440x900, captured offscreen by the app's own test 
 
 ## MCP for agents
 
-Start the bridge first (Settings > Bridge and Flycast). Then, with the zip unzipped to `C:\Tools\QA Link Cloud`:
+Start the bridge first (Settings > Bridge and Flycast). Then, with the zip unzipped to `C:\Tools\DC QA Link Cloud`:
 
 Claude Code:
 ```
-claude mcp add qalink -- python -I "C:\Tools\QA Link Cloud\resources\bridge\pc\qalink_bridge.py" --mcp stdio --bridge http://127.0.0.1:52080 --mcp-level control
+claude mcp add qalink -- python -I "C:\Tools\DC QA Link Cloud\resources\bridge\pc\qalink_bridge.py" --mcp stdio --bridge http://127.0.0.1:52080 --mcp-level control
 ```
 Codex (`~/.codex/config.toml`):
 ```
 [mcp_servers.qalink]
 command = "python"
-args = ["-I", "C:\\Tools\\QA Link Cloud\\resources\\bridge\\pc\\qalink_bridge.py", "--mcp", "stdio", "--bridge", "http://127.0.0.1:52080", "--mcp-level", "control"]
+args = ["-I", "C:\\Tools\\DC QA Link Cloud\\resources\\bridge\\pc\\qalink_bridge.py", "--mcp", "stdio", "--bridge", "http://127.0.0.1:52080", "--mcp-level", "control"]
 ```
 The app shows these lines with your own paths in Settings > Agents. Level `control` can read and steer but not push
 code; raise it to `run` on purpose. Tool list: [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).
