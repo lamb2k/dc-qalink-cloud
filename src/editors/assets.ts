@@ -1,6 +1,8 @@
 import { desktop } from '../platform/desktop';
 // Assets: drop a model or texture, see what the Dreamcast would pay, the PC preview beside the console's view.
-// The console side is a labelled mock until the link sends assets (plan 2a, milestone L5b). Sizes are computed.
+// "View on console" (plan L5b, lane ql-assets; dc-qalink docs/ASSETS.md): the bridge converts the file, checks the
+// live-asset budget, sends it to the console viewer, draws it with this editor's camera and grabs the console's own
+// picture, with a difference against its PC render and the measured cost. Off, the console pane stays a labelled mock.
 // The build's own disc (lane ql-disc): the Asset browser lists the files of the network disc's manifest (base and
 // overlay, the side each is read from, its hash); a file opened is decoded (data/assetdec.ts: PVR, PNG, OBJ, glTF, and
 // plugins for a game's own formats) and becomes an asset of the same list, shown in the same two views with the same
@@ -12,6 +14,7 @@ import { blitFit, render, torusMesh, type Cam, type Mesh } from './pictures';
 import { ENDPOINTS, type C1Disc, type C1DiscFile } from '../data/bridge-api';
 import type { DiscRecord } from '../data/format';
 import { decoderFor, listDecoders, loadPlugins, type DecodedAsset, type DecodedMesh } from '../data/assetdec';
+import { drawMs, editorState, grabState, Latest, uploadAsset, uploadPath, viewAsset, type C1AssetRecord, type C1AssetView } from '../data/console-assets';
 
 const VRAM = 8 * 1024 * 1024, RAM = 16 * 1024 * 1024, STRIP_VERT = 32;
 type AState = 'live' | 'sent' | 'converting' | 'refused' | 'checked';
@@ -19,6 +22,8 @@ interface Asset {
   name: string; kind: 'model' | 'texture'; state: AState; tris: number; strips: number; stripVerts: number; texW: number; texH: number; note: string; mock: boolean;
   /** ql-disc, all optional: a file of the build's disc (its path, the side it is read from, its hash) and its decoded form */
   source?: 'drop' | 'disc'; path?: string; side?: 'pc' | 'disc'; sha256?: string; decoded?: DecodedAsset;
+  /** ql-assets: the file's bytes (what the bridge converts), its record there, the last console view, a request running */
+  bytes?: Uint8Array; remote?: C1AssetRecord; view?: C1AssetView; busy?: boolean; err?: string;
 }
 const torus = torusMesh();
 const texBytes = (w: number, h: number) => { let b = 0; for (let s = Math.max(w, h); s >= 1; s >>= 1) b += Math.max(1, (w * s) / Math.max(w, h)) * Math.max(1, (h * s) / Math.max(w, h)) * 2; return Math.round(b); };
@@ -29,8 +34,10 @@ const assets: Asset[] = [
   { name: 'sphere_dense_512.obj', kind: 'model', state: 'refused', tris: 524288, strips: 512, stripVerts: 512 * 513 * 2, texW: 0, texH: 0, note: 'refused before sending', mock: true },
 ];
 let version = 0;
-const ram = (a: Asset) => a.stripVerts * STRIP_VERT;
-const vram = (a: Asset) => (a.decoded?.textures[0] ? a.decoded.textures[0].vramBytes : a.texW ? texBytes(a.texW, a.texH) : 0);
+// once the bridge has converted it, its own numbers (the whole file the console holds; textures as they go into graphics
+// memory); the rule is the same (a quarter of main memory, half of graphics memory)
+const ram = (a: Asset) => a.remote ? a.remote.ram : a.stripVerts * STRIP_VERT;
+const vram = (a: Asset) => (a.remote ? a.remote.vram : a.decoded?.textures[0] ? a.decoded.textures[0].vramBytes : a.texW ? texBytes(a.texW, a.texH) : 0);
 const fits = (a: Asset) => ram(a) <= RAM / 4 && vram(a) <= VRAM / 2;
 const pill = (s: AState) => ({ live: ['ok', 'circle-check', 'live on console'], sent: ['info', 'upload', 'sent'], converting: ['warn', 'loader-circle', 'converting'], refused: ['err', 'circle-x', 'over budget'], checked: ['', 'check', 'checked, not sent'] } as const)[s];
 
@@ -43,10 +50,59 @@ async function addFile(app: App, f: File): Promise<void> {
     const text = await f.text(); let v = 0, t = 0; for (const line of text.split('\n')) { if (line.startsWith('v ')) v++; else if (line.startsWith('f ')) t += Math.max(1, line.trim().split(/\s+/).length - 3); }
     const sv = Math.round(t * 1.1 + 2);
     a = { name: f.name, kind: 'model', state: 'checked', tris: t, strips: Math.max(1, Math.round(t / 40)), stripVerts: sv, texW: 0, texH: 0, note: `${int(v)} vertices; strips estimated at 1.1 a triangle`, mock: false };
-  } else { app.toast('warn', `${f.name}: not a PNG or OBJ`, 'glTF arrives with the converter (plan 2a).'); return; }
+  } else if (/\.(jpe?g|gltf|glb)$/.test(lower)) {   // read by the bridge's converter (the numbers come back from it)
+    a = { name: f.name, kind: /\.jpe?g$/.test(lower) ? 'texture' : 'model', state: 'checked', tris: 0, strips: 0, stripVerts: 0, texW: 0, texH: 0, note: 'converted by the bridge when sent', mock: false };
+  } else { app.toast('warn', `${f.name}: not a PNG, JPEG, OBJ or glTF`, 'Textures: PNG, JPEG. Models: OBJ, glTF, GLB.'); return; }
+  a.bytes = new Uint8Array(await f.arrayBuffer()); a.source = 'drop';
   if (!fits(a)) { a.state = 'refused'; a.note = 'over budget, not sent'; }
   assets.unshift(a); app.view.set('asset', 0); version++;
-  app.toast(a.state === 'refused' ? 'err' : 'ok', a.state === 'refused' ? `${f.name} refused: over budget` : `${f.name} checked`, 'Not sent: the link does not take assets yet. Numbers are computed here.');
+  app.toast(a.state === 'refused' ? 'err' : 'ok', a.state === 'refused' ? `${f.name} refused: over budget` : `${f.name} checked`,
+    consoleOn ? 'Sending to the console viewer.' : 'Not sent: switch on "View on console" in the On the Dreamcast pane. Numbers are computed here.');
+  if (consoleOn && a.state !== 'refused') want(app, 60);
+}
+
+// ---------------------------------------------------------------- view on console (lane ql-assets)
+let consoleOn = false;
+const consoleButtons: HTMLElement[] = [];
+let dcMode: 'grab' | 'diff' | 'pc' = 'grab';
+const dcModeLabel = { grab: 'console grab', diff: 'difference (grey = equal)', pc: 'the bridge\'s PC render' } as const;
+const images = new Map<string, HTMLImageElement>();
+function imageOf(url: string): HTMLImageElement | null {
+  let im = images.get(url);
+  if (!im) {   // fetched, then shown from a blob: the app's page policy lets pictures come only from itself, data: or blob:
+    const img = new Image(); im = img; img.onload = () => { camV++; version++; }; images.set(url, img);
+    if (images.size > 64) { const k = images.keys().next().value as string; const old = images.get(k); if (old?.src.startsWith('blob:')) URL.revokeObjectURL(old.src); images.delete(k); }
+    void fetch(url).then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`bridge answered ${r.status}`)))).then((b) => { img.src = URL.createObjectURL(b); }).catch(() => { images.delete(url); });
+  }
+  return im.complete && im.naturalWidth ? im : null;
+}
+function applyRecord(a: Asset, r: C1AssetRecord): void {
+  a.remote = r; a.tris = r.tris; a.strips = r.strips; a.stripVerts = r.stripVerts; a.texW = r.texW; a.texH = r.texH; a.note = r.note;
+  a.state = r.fits ? 'sent' : 'refused';
+}
+/** One round trip: convert on the bridge (once), then send, set the camera, measure, grab and compare. */
+const consoleQ = new Latest<{ app: App; a: Asset; c: Cam; measure: number }>(async ({ app, a, c, measure }) => {
+  const base = app.bridgeUrl.replace(/\/$/, '');
+  a.busy = true; a.err = undefined; version++;
+  try {
+    if (!a.remote) {
+      if (!a.bytes) throw new Error('no file to send (a sample entry)');
+      a.state = 'converting'; version++;
+      const sendName = a.decoded?.decoder === 'pvr' ? a.name.replace(/\.[^.]*$/, '') + '.png' : a.name;
+      applyRecord(a, await uploadAsset(base, sendName, a.bytes));
+      if (!a.remote!.fits) { app.toast('err', `${a.name} refused: over budget`, a.remote!.reason ?? ''); return; }
+    }
+    const v = await viewAsset(base, a.remote!.id, c, { measure: a.view ? measure : 60 });
+    if (!v.cost && a.view?.cost) v.cost = a.view.cost;      // a camera-only view keeps the last measured cost
+    a.view = v; a.state = editorState(a.remote, v); if (v.why) a.note = v.why;
+  } catch (e) { a.err = String((e as Error).message ?? e); if (a.state === 'converting') a.state = 'checked'; app.toast('err', `${a.name}: the console round trip failed`, a.err); }
+  finally { a.busy = false; version++; camV++; }
+});
+/** Ask for the selected asset on the console with the current camera (the newest wish wins). */
+function want(app: App, measure = 0): void {
+  const a = assets[app.view.asset];
+  if (!consoleOn || !a || a.mock || (a.state === 'refused' && !a.remote) || (a.remote && !a.remote.fits)) return;
+  consoleQ.want({ app, a, c: { ...cam }, measure });
 }
 
 // The desktop app reads dropped files through window.qalink (the main process checks the path and the kind) and
@@ -65,7 +121,8 @@ async function dropFile(app: App, f: File): Promise<void> {
       q.onFileChanged(async (handle, name) => {
         if (!watched.has(handle)) return;
         const n = await q.reread(handle); const i = assets.findIndex((a) => a.name === name && !a.mock); if (i >= 0) assets.splice(i, 1);
-        await addFile(app, new File([n.bytes as BlobPart], n.name)); app.toast('info', `${name} changed on disk`, 'Checked again against the budget.');
+        // addFile sends it again when "View on console" is on: the console's picture follows the save
+        await addFile(app, new File([n.bytes as BlobPart], n.name)); app.toast('info', `${name} changed on disk`, consoleOn ? 'Checked again and sent to the console.' : 'Checked again against the budget.');
       });
     }
   } catch (e) { app.toast('err', `Could not read ${f.name}`, String(e)); }
@@ -92,10 +149,12 @@ async function refreshDisc(app: App): Promise<void> {
   finally { disc.busy = false; }
 }
 function toMesh(d: DecodedMesh): Mesh {
-  const n = d.positions.length / 3; let cx = 0, cy = 0, cz = 0; for (let i = 0; i < n; i++) { cx += d.positions[i * 3]; cy += d.positions[i * 3 + 1]; cz += d.positions[i * 3 + 2]; }
-  cx /= n || 1; cy /= n || 1; cz /= n || 1; let r = 1e-6;
+  // contract 2a (dc-qalink docs/ASSETS.md): centred on the bounding box, scaled to a bounding sphere of radius 1
+  const n = d.positions.length / 3; const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < n; i++) for (let j = 0; j < 3; j++) { lo[j] = Math.min(lo[j], d.positions[i * 3 + j]); hi[j] = Math.max(hi[j], d.positions[i * 3 + j]); }
+  const cx = (lo[0] + hi[0]) / 2, cy = (lo[1] + hi[1]) / 2, cz = (lo[2] + hi[2]) / 2; let r = 1e-6;
   for (let i = 0; i < n; i++) r = Math.max(r, Math.hypot(d.positions[i * 3] - cx, d.positions[i * 3 + 1] - cy, d.positions[i * 3 + 2] - cz));
-  const s = 1.3 / r; const V: Mesh['V'] = []; const T: number[][] = [];
+  const s = 1 / r; const V: Mesh['V'] = []; const T: number[][] = [];
   const nrm = d.normals ?? new Float32Array(n * 3);
   if (!d.normals) for (let t = 0; t + 2 < d.indices.length; t += 3) {   // face normals summed per vertex
     const [a, b, c] = [d.indices[t], d.indices[t + 1], d.indices[t + 2]]; const p = (k: number, j: number) => d.positions[k * 3 + j];
@@ -114,6 +173,11 @@ function mipCanvas(a: Asset, level = 0): HTMLCanvasElement | null {
   let cv = texCanvas.get(mp); if (cv) return cv;
   cv = document.createElement('canvas'); cv.width = mp.w; cv.height = mp.h; cv.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(mp.rgba), mp.w, mp.h), 0, 0); texCanvas.set(mp, cv); return cv;
 }
+async function levelPng(a: Asset): Promise<Uint8Array | null> {
+  const cv = mipCanvas(a, 0); if (!cv) return null;
+  const b = await new Promise<Blob | null>((r) => cv.toBlob(r, 'image/png')); if (!b) return null;
+  return new Uint8Array(await b.arrayBuffer());
+}
 async function openDiscFile(app: App, f: C1DiscFile): Promise<void> {
   const base = app.bridgeUrl.replace(/\/$/, ''); const name = f.path.split('/').pop() ?? f.path;
   const dec = decoderFor(f.path);
@@ -121,20 +185,25 @@ async function openDiscFile(app: App, f: C1DiscFile): Promise<void> {
   try {
     const get = async (p: string) => { const r = await fetch(base + ENDPOINTS.discFile(p)); if (!r.ok) throw new Error(`${p}: ${r.status}`); return new Uint8Array(await r.arrayBuffer()); };
     const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : '';
-    const d = await dec.decode(await get(f.path), name, { sibling: async (n) => { try { return await get(dir + n); } catch { return null; } } });
+    const raw = await get(f.path);
+    const d = await dec.decode(raw, name, { sibling: async (n) => { try { return await get(dir + n); } catch { return null; } } });
     const t = d.textures[0]; const tris = d.mesh ? d.mesh.indices.length / 3 : 0;
     const a: Asset = { name, kind: d.kind, state: 'checked', tris, strips: Math.max(tris ? 1 : 0, Math.round(tris / 40)), stripVerts: tris ? Math.round(tris * 1.1 + 2) : 0, texW: t?.width ?? 0, texH: t?.height ?? 0,
       note: t ? `${t.format}, ${t.layout}, ${t.mips.length} mip level${t.mips.length === 1 ? '' : 's'}` : `${d.decoder}: ${int(tris)} triangles; strips estimated at 1.1 a triangle`, mock: false,
       source: 'disc', path: f.path, side: f.side, sha256: f.sha256, decoded: d };
     if (!fits(a)) { a.state = 'refused'; a.note = 'over the live-asset budget'; }
+    // what "View on console" sends: the file as it is; a PVR goes as its level-0 picture (the bridge's converters take
+    // PNG, JPEG, OBJ and glTF; the PVR's own bytes are not re-sent, so its format is chosen again by the converter)
+    a.bytes = d.decoder === 'pvr' ? await levelPng(a) ?? undefined : raw;
     const i = assets.findIndex((x) => x.source === 'disc' && x.path === f.path); if (i >= 0) assets.splice(i, 1);
     assets.unshift(a); app.view.set('asset', 0); version++;
+    if (consoleOn && a.state !== 'refused') want(app, 60);
   } catch (e) { app.toast('err', `Could not open ${name}`, String(e)); }
 }
 
 class AssetList implements Editor {
   el = h('div'); bodyClass = 'scroll'; tools: HTMLElement[]; private built = '';
-  private input = h('input', { type: 'file', accept: '.png,.obj', class: 'sr-only', multiple: true });
+  private input = h('input', { type: 'file', accept: '.png,.jpg,.jpeg,.obj,.gltf,.glb', class: 'sr-only', multiple: true });
   private find = h('input', { class: 'input', type: 'search', placeholder: 'Filter the disc', 'aria-label': 'Filter the disc\'s files' });
   constructor(private app: App) {
     this.tools = [toolBtn('plus', 'Add a model or texture', () => this.input.click())];
@@ -146,7 +215,7 @@ class AssetList implements Editor {
     void refreshDisc(this.app);
     const k = `${version}|${this.app.view.asset}|${disc.v}|${bridgeOn(this.app)}`; if (k === this.built) return; this.built = k;
     const drop = h('div', { class: 'drop', tabindex: '0', role: 'button', 'aria-label': 'Drop a model or texture, or press Enter to choose a file' },
-      h('span', { class: 't', html: iconSvg('file-up') }, 'Drop a model or texture'), h('span', null, 'PNG or OBJ. Checked against the console budget on this PC. Sending waits for the link (mock).'));
+      h('span', { class: 't', html: iconSvg('file-up') }, 'Drop a model or texture'), h('span', null, 'PNG, JPEG, OBJ or glTF. Checked against the console budget; "View on console" sends it to the Dreamcast.'));
     drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-over'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
     drop.addEventListener('drop', async (e) => { e.preventDefault(); drop.classList.remove('is-over'); for (const f of e.dataTransfer?.files ?? []) await dropFile(this.app, f); });
@@ -191,23 +260,46 @@ class Viewport implements Editor {
     this.el = h('div', { class: 'fill' }, this.cv, this.note, this.lbl);
     this.cv.setAttribute('aria-label', dc ? 'On the Dreamcast (mock render)' : 'PC preview, drag to orbit');
     if (!dc) {
-      this.tools = [toolBtn('rotate-ccw', 'Reset the camera', () => { cam.yaw = (35 * Math.PI) / 180; cam.pitch = (28 * Math.PI) / 180; camV++; }),
+      this.tools = [toolBtn('rotate-ccw', 'Reset the camera', () => { cam.yaw = (35 * Math.PI) / 180; cam.pitch = (28 * Math.PI) / 180; camV++; want(app); }),
         toolBtn('layers', 'Next mip level (textures)', () => { mipView++; camV++; })];
       this.cv.addEventListener('pointerdown', (e) => {
         this.cv.setPointerCapture(e.pointerId); let lx = e.clientX, ly = e.clientY;
-        const mv = (m: PointerEvent) => { cam.yaw += (m.clientX - lx) * 0.01; cam.pitch = Math.max(-1.2, Math.min(1.2, cam.pitch + (m.clientY - ly) * 0.01)); lx = m.clientX; ly = m.clientY; camV++; };
+        const mv = (m: PointerEvent) => { cam.yaw += (m.clientX - lx) * 0.01; cam.pitch = Math.max(-1.2, Math.min(1.2, cam.pitch + (m.clientY - ly) * 0.01)); lx = m.clientX; ly = m.clientY; camV++; want(app); };
         const up = () => { this.cv.removeEventListener('pointermove', mv); this.cv.removeEventListener('pointerup', up); };
         this.cv.addEventListener('pointermove', mv); this.cv.addEventListener('pointerup', up);
       });
-    } else this.tools = [];
+    } else {
+      // "View on console": the selected asset goes to the console viewer and its grab replaces the mock; the second
+      // button steps through the console grab, the difference and the bridge's own PC render of the same view
+      const on = toolBtn('upload', 'View on console', () => { consoleOn = !consoleOn; on.setAttribute('aria-pressed', String(consoleOn)); on.classList.toggle('is-on', consoleOn); version++; camV++; want(app, 60); }, consoleOn);
+      const mode = toolBtn('diff', 'Console grab, difference, PC render', () => { dcMode = dcMode === 'grab' ? 'diff' : dcMode === 'diff' ? 'pc' : 'grab'; camV++; });
+      this.tools = [on, mode];
+      consoleButtons.push(on);
+    }
     this.w.observe(this.el);
   }
-  meta(): string { const a = assets[this.app.view.asset]; return this.dc ? (a?.state === 'refused' ? 'not sent' : 'mock, same camera') : 'one camera with the console'; }
-  private shown = '';
+  meta(): string {
+    const a = assets[this.app.view.asset];
+    if (this.dc && consoleOn) return a?.busy ? 'sending to the console' : a?.view ? `console, ${a.view.tier}, ${dcModeLabel[dcMode]}` : a?.state === 'refused' ? 'not sent' : 'console: pick an asset';
+    return this.dc ? (a?.state === 'refused' ? 'not sent' : 'mock, same camera') : 'one camera with the console';
+  }
+  private shown = ''; private sel = -1;
   frame(force: boolean): void {
-    if (!this.w.changed(this.app, `${camV}|${version}`) && !force) return;
+    if (this.dc && consoleOn && this.app.view.asset !== this.sel) { this.sel = this.app.view.asset; want(this.app, 60); }
+    if (!this.w.changed(this.app, `${camV}|${version}|${this.app.view.asset}`) && !force) return;
     const a = assets[this.app.view.asset]; const { g, w, h: hh } = fitCanvas(this.cv);
     const refused = a?.state === 'refused';
+    if (this.dc && consoleOn && a?.view?.console && !refused) {   // the console's own picture (or the difference)
+      const v = a.view; const base = this.app.bridgeUrl.replace(/\/$/, '');
+      const url = dcMode === 'diff' ? v.diff?.url : dcMode === 'pc' ? v.pc?.url : v.console?.url;
+      const im = url ? imageOf(base + url) : null;
+      this.el.querySelector('.fill-center')?.remove(); this.shown = 'console'; this.note.hidden = false; this.lbl.hidden = false;
+      if (im) { g.clearRect(0, 0, w, hh); blitFit(g, w, hh, im, 'fit', 1, undefined, false); }
+      const gs = grabState(v);
+      this.note.textContent = `${dcModeLabel[dcMode]} · 640x480 · ${v.tier} · round trip ${(v.times.round_trip_s ?? 0).toFixed(2)} s · ${gs.text}${a.busy ? ' · updating' : ''}`;
+      this.lbl.textContent = v.diff ? `${int(v.diff.differ)} px differ, ${int(v.diff.over)} over ${v.diff.threshold} levels` : ''; this.lbl.hidden = !v.diff;
+      return;
+    }
     const show = this.dc && refused ? 'refused' : 'render';
     if (show !== this.shown) { this.shown = show; this.el.querySelector('.empty')?.remove(); }
     if (this.dc && refused) {
@@ -216,6 +308,13 @@ class Viewport implements Editor {
       return;
     }
     this.el.querySelector('.fill-center')?.remove(); this.note.hidden = false; this.lbl.hidden = false;
+    if (!this.dc && a && !a.mock && !a.decoded && a.view?.pc) {   // a file only the bridge has read: its own PC render of
+      const im = imageOf(this.app.bridgeUrl.replace(/\/$/, '') + a.view.pc.url);   // the same view (contract 2a), not the sample
+      if (im) { g.clearRect(0, 0, w, hh); blitFit(g, w, hh, im, 'fit', 1, undefined, false); }
+      this.note.textContent = `${a.name}: the bridge's PC render of the console's view (contract 2a)${a.busy ? ' · updating' : ''}`;
+      this.lbl.textContent = `orbit yaw ${((cam.yaw * 180) / Math.PI).toFixed(1)} pitch ${((cam.pitch * 180) / Math.PI).toFixed(1)} distance ${cam.dist.toFixed(2)} fov ${((cam.fov * 180) / Math.PI).toFixed(0)}`;
+      return;
+    }
     const cols = { bg: this.dc ? [0, 0, 0] : rgbOf('--n-1'), colA: rgbOf('--n-11'), colB: rgbOf('--accent-solid') };
     if (a?.decoded?.kind === 'texture') {   // a decoded texture: its mip level, nearest, on both sides (the console's grab comes with L5b)
       const t = a.decoded.textures[0]; const lv = mipView % Math.max(1, t.mips.length); const tc = mipCanvas(a, lv);
@@ -243,10 +342,15 @@ class Sync implements Editor {
     if (a.kind === 'model') rows.push(['Build strips', `${int(a.strips)} strips, ${int(a.stripVerts)} strip vertices, ${int(ram(a))} B`, st('ok', 'done')]);
     if (a.texW) rows.push(['Convert texture', a.decoded?.textures[0] && a.decoded.decoder === 'pvr' ? `already Dreamcast form: ${a.decoded.textures[0].format}, ${a.decoded.textures[0].layout}, ${int(vram(a))} B` : `${a.texW} x ${a.texH} RGB565, twiddled, mip maps, ${int(vram(a))} B`, st(a.state === 'converting' ? 'warn' : 'ok', a.state === 'converting' ? 'running' : 'done')]);
     rows.push(['Check budget', `main ${int(ram(a))} B of ${int(RAM / 4)} B, graphics ${int(vram(a))} B of ${int(VRAM / 2)} B`, st(refused ? 'err' : 'ok', refused ? 'refused' : 'fits')]);
-    rows.push(['Send to console', refused ? 'not sent' : a.mock ? `broadband adapter, ${int(ram(a) + vram(a))} B (mock)` : 'waits for the link to take assets', st(refused || !a.mock ? '' : a.state === 'live' ? 'ok' : 'info', refused ? 'skipped' : !a.mock ? 'not yet' : a.state === 'live' ? 'sent' : a.state)]);
-    if (a.state === 'live') rows.push(['Console grab', '640x480, same camera', st('ok', 'in sync (mock)')]);
+    const v = a.view; const tm = v?.times;
+    if (a.mock || !a.remote) rows.push(['Send to console', refused ? 'not sent' : a.mock ? `broadband adapter, ${int(ram(a) + vram(a))} B (mock)` : a.busy ? 'converting on the bridge' : a.err ? a.err : consoleOn ? 'waits for the console viewer' : 'switch on "View on console"', st(refused || !a.mock ? (a.err ? 'err' : a.busy ? 'warn' : '') : a.state === 'live' ? 'ok' : 'info', refused ? 'skipped' : a.err ? 'failed' : a.busy ? 'running' : !a.mock ? 'not yet' : a.state === 'live' ? 'sent' : a.state)]);
+    else rows.push(['Send to console', refused ? `not sent: ${a.remote.reason ?? 'over budget'}` : `broadband adapter, ${int(a.remote.bytes)} B${tm?.send_s ? `, ${tm.send_s.toFixed(2)} s` : ''}${a.remote.console?.why ? ` · ${a.remote.console.why}` : ''}`,
+      st(refused ? '' : a.err ? 'err' : a.busy ? 'warn' : a.state === 'live' ? 'ok' : 'info', refused ? 'skipped' : a.err ? 'failed' : a.busy ? 'running' : a.state === 'live' ? 'sent' : a.state)]);
+    if (a.remote?.lost.length) rows.push(['What the conversion lost', a.remote.lost.join('; '), st('', a.remote.psnr != null ? `${a.remote.psnr} dB` : 'noted')]);
+    if (v?.diff) { const gs = grabState(v); rows.push(['Console grab', `640x480, same camera, ${v.tier}: grab ${(tm?.grab_s ?? 0).toFixed(2)} s, round trip ${(tm?.round_trip_s ?? 0).toFixed(2)} s; ${int(v.diff.differ)} px differ, ${int(v.diff.over)} over ${v.diff.threshold} levels, PSNR ${v.diff.psnr} dB`, st(gs.cls, gs.text)]); }
+    else if (a.state === 'live' && a.mock) rows.push(['Console grab', '640x480, same camera', st('ok', 'in sync (mock)')]);
     this.el.innerHTML = `<table class="table dense"><thead><tr><th>Step</th><th>Detail</th><th>State</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(r[0])}</td><td class="mono muted"><span class="ellipsis" title="${esc(r[1])}">${esc(r[1])}</span></td><td>${r[2]}</td></tr>`).join('')}</tbody></table>
-      <div class="faint" style="padding:var(--s-2) var(--s-3);font-size:var(--fs-xs)">Sizes are computed (32 B a strip vertex, 16-bit texels with a mip chain). Live assets may use a quarter of main memory and half of graphics memory. The console side is a mock until the link sends assets.</div>`;
+      <div class="faint" style="padding:var(--s-2) var(--s-3);font-size:var(--fs-xs)">${a.remote ? 'Sizes from the bridge\'s converter (the file the console holds; textures as they go into graphics memory).' : 'Sizes are computed (32 B a strip vertex, 16-bit texels with a mip chain).'} Live assets may use a quarter of main memory and half of graphics memory. ${consoleOn ? 'The grab and the difference come from the console viewer; each number carries its tier.' : 'The console side is a mock until "View on console" is on.'}</div>`;
   }
 }
 
@@ -268,9 +372,10 @@ class AssetProps implements Editor {
       <div class="prop-section"><div class="section-title">${iconSvg('memory-stick')}Budget for live assets</div>
         ${meter('Main memory, a quarter of 16 MB', ram(a), RAM / 4, `${int(ram(a))} B`)}
         ${meter('Graphics memory, half of 8 MB', vram(a), VRAM / 2, `${int(vram(a))} B`)}
-        ${meter('Time to draw, budget 14.0 ms', 0, 14, 'not measured')}
+        ${(() => { const c = a.view?.cost ?? a.remote?.cost; const d = drawMs(c); return meter('Time to draw, budget 14.0 ms', d?.mean ?? 0, 14, d ? `${fmt(d.mean, 2)} ms, worst ${fmt(d.worst, 2)} (${c!.tier})` : 'not measured'); })()}
+        ${(() => { const c = a.view?.cost ?? a.remote?.cost; return c ? dl([['Vertices drawn', int(c.verts)], ['Strips', int(c.strips)], ['Texture bytes in graphics memory', int(c.texture_bytes)], ['Bytes to the chip a picture', int(c.vertex_buffer_bytes)], ['Graphics memory free', int(c.graphics_free)], ['CPU transform and submit', c.submit_ms ? `${fmt(c.submit_ms.mean, 3)} ms, worst ${fmt(c.submit_ms.worst, 3)}` : '-'], ['Chip render', c.render_ms ? `${fmt(c.render_ms.mean, 3)} ms, worst ${fmt(c.render_ms.worst, 3)}` : '-'], ['Measured over', `${int(c.pictures)} pictures, ${c.tier}`]]) : ''; })()}
         ${a.state === 'refused' ? `<div class="field"><span class="err">${iconSvg('circle-alert')}Over budget: not sent.</span></div>` : ''}
-        <div class="faint" style="font-size:var(--fs-xs)">Draw time appears once the console has drawn it. ${a.mock ? 'This entry is sample data.' : a.source === 'disc' ? 'Decoded from the build\'s disc on this PC.' : 'Computed from your file on this PC.'}</div></div>`;
+        <div class="faint" style="font-size:var(--fs-xs)">${a.view?.cost ? 'Measured by the console viewer; a Flycast number is a function check, not a console speed.' : 'Draw time appears once the console has drawn it.'} ${a.mock ? 'This entry is sample data.' : a.source === 'disc' ? 'Decoded from the build\'s disc on this PC.' : 'Computed from your file on this PC.'}</div></div>`;
   }
 }
 
@@ -308,6 +413,22 @@ export const assetEditors: EditorDef[] = [
   { id: 'assetprops', title: 'Asset properties', icon: 'settings', group: 'Assets', create: (app) => new AssetProps(app) },
   { id: 'disc', title: 'Disc', icon: 'disc-3', group: 'Assets', create: (app) => new DiscPanel(app) },
 ];
+
+/** For scripted captures and agents (lane ql-assets): add a file by its path on the bridge's PC (the bridge reads an
+ *  OBJ's .mtl and textures beside it), switch "View on console", step the console pane's mode, set the camera. */
+export const assetHooks = {
+  async addPath(app: App, path: string): Promise<void> {
+    const r = await uploadPath(app.bridgeUrl.replace(/\/$/, ''), path);
+    const a: Asset = { name: r.name, kind: r.kind, state: 'checked', tris: 0, strips: 0, stripVerts: 0, texW: 0, texH: 0, note: '', mock: false, source: 'drop', path };
+    applyRecord(a, r); assets.unshift(a); app.view.set('asset', 0); version++;
+    if (consoleOn && a.remote?.fits) want(app, 60);
+  },
+  console(app: App, on: boolean): void { consoleOn = on; for (const b of consoleButtons) { b.setAttribute('aria-pressed', String(on)); b.classList.toggle('is-on', on); } version++; camV++; want(app, 60); },
+  mode(m: 'grab' | 'diff' | 'pc'): void { dcMode = m; camV++; },
+  camera(app: App, c: Partial<Cam>): void { Object.assign(cam, c); camV++; want(app); },
+  idle: (): boolean => consoleQ.idle && !assets.some((a) => a.busy),
+};
+(globalThis as Record<string, unknown>).qlAssets = assetHooks;
 
 /** For plan L5b ("view on console"): the selected asset's decoded form and the shared camera, as plain data. */
 export function selectedForConsole(app: App): { asset: { name: string; path?: string; sha256?: string; decoded?: DecodedAsset } | null; camera: Cam } {
