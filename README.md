@@ -49,11 +49,23 @@ From source the app starts the mock bridge unless it finds dc-qalink: set `QALIN
 
 ## Setup flow
 
-Seven steps: welcome, connection, loader disc, Flycast, find the console, first test, agents. Each step can be
-skipped and is kept across restarts. Open it again from Settings or `Ctrl K` > "Set up a console".
+A few questions, then the sample game on your Dreamcast (or Flycast) with live data and a screen grab:
+1. **How is your Dreamcast connected?** Broadband adapter, modem with a DreamPi, or Flycast only.
+2. **Where do you keep your builds?** A folder picker, or **Start with the sample game** (dc-qalink's `example/demo3d`,
+   a small 3D game). That one folder is all the console sees: programs to push, `/pc` files and the network disc.
+   Over the modem there is no such step: builds are pushed only, and the network disc is skipped (too slow).
+3. The network, the loader on the SD card (GDEMU, openMenu; the app never writes a card), Flycast, find the console.
+4. **First run:** push the sample, live data, a screen grab.
+5. **Try it:** swap the sample's floor texture and push again (no SD card change), open the in-game menu, press its
+   crash button (the report and registers come back), RESET.
 
-![First test step of the setup flow: the test program passed and its screen grab](docs/images/setup-test.png)
-<sub>Setup flow, first test. Mock bridge, demo data (synthetic).</sub>
+Each step can be skipped and is kept across restarts; Settings, "Console and builds", keeps every answer editable.
+Open it again from Settings or `Ctrl K` > "Set up a console".
+
+![The set-up: how the Dreamcast connects](docs/images/onboarding-connection.png)
+![The set-up: the sample game as the builds folder](docs/images/onboarding-builds.png)
+<sub>Setup flow, the first two questions (test mode, offscreen). Paths and addresses shown are
+examples (192.0.2.x).</sub>
 
 ## Tour
 

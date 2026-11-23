@@ -13,8 +13,11 @@ export type ProgramId = 'bridge' | 'flycast';
 export interface ProgramStatus { id: ProgramId; label: string; configured: boolean; running: boolean; pid: number | null; detail: string; lastExit: number | null; output: string[] }
 export interface McpLaunch { command: string; args: string[]; env: Record<string, string> }
 export interface AppInfo { app: string; version: string; electron: string; chrome: string; node: string; platform: string; packaged: boolean; dataDir: string; mcp: McpLaunch; capture: boolean }
-export interface AppSettings { version: 1; startBridgeOnLaunch: boolean; bridgeAddress: string; flycastPath: string; mcpLocal: boolean; flycastPrepared: string; consoleOnNetwork?: boolean; autoconnect?: boolean }
-export type SettingKey = 'startBridgeOnLaunch' | 'bridgeAddress' | 'mcpLocal' | 'consoleOnNetwork' | 'autoconnect';
+export type Connection = 'bba' | 'modem' | 'flycast';
+export interface AppSettings { version: 1; startBridgeOnLaunch: boolean; bridgeAddress: string; flycastPath: string; mcpLocal: boolean; flycastPrepared: string; consoleOnNetwork?: boolean; autoconnect?: boolean; connection?: Connection | ''; buildsRoot?: string }
+export type SettingKey = 'startBridgeOnLaunch' | 'bridgeAddress' | 'mcpLocal' | 'consoleOnNetwork' | 'autoconnect' | 'connection';
+/** the builds folder: the one folder the bridge shares with the console (files, network disc overlay, asset root) */
+export interface BuildsInfo { root: string; sample: boolean; sampleAvailable: boolean; connection: Connection | ''; programs: string[]; shared: string }
 
 export interface QalinkDesktop {
   readonly version: number;
@@ -39,13 +42,23 @@ export interface QalinkDesktop {
   chooseFlycast(): Promise<ProgramStatus>;
   /** makes the app's own Flycast settings folder (never the user's); returns its path */
   prepareFlycast(): Promise<{ ok: boolean; dir: string; note: string }>;
+  builds(): Promise<BuildsInfo>;
+  /** the system folder dialog; the main process keeps the folder and restarts a running bridge with it */
+  chooseBuilds(): Promise<BuildsInfo>;
+  /** copies the bundled sample game into the app's data folder (once) and makes it the builds folder */
+  useSample(): Promise<BuildsInfo>;
+  /** a program (.elf, .bin) by its plain name in the builds folder; anything else is refused */
+  readBuild(name: string): Promise<{ name: string; size: number; modified: number; bytes: Uint8Array }>;
+  /** the sample's texture swap (FLOOR.BMP and extras/FLOOR_ALT.BMP trade places) */
+  swapSampleTexture(): Promise<{ changed: string; bytes: number }>;
   settings(): Promise<AppSettings>;
   setSetting(key: SettingKey, value: boolean | string): Promise<AppSettings>;
 }
 
 /** The IPC channels the preload uses; the main process handles exactly these (tests/desktop.test.ts checks both). */
 export const IPC_CHANNELS = ['app:info', 'file:open', 'file:read-dropped', 'file:reread', 'file:save', 'file:watch', 'file:unwatch', 'net:interfaces',
-  'prog:list', 'prog:start', 'prog:stop', 'prog:choose-flycast', 'prog:prepare-flycast', 'settings:get', 'settings:set'] as const;
+  'prog:list', 'prog:start', 'prog:stop', 'prog:choose-flycast', 'prog:prepare-flycast', 'builds:info', 'builds:choose', 'builds:use-sample', 'builds:read',
+  'builds:swap-sample-texture', 'settings:get', 'settings:set'] as const;
 export const IPC_EVENTS = ['file:changed', 'prog:status'] as const;
 
 declare global { interface Window { qalink?: QalinkDesktop } }

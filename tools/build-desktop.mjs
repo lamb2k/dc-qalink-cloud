@@ -26,6 +26,12 @@ const BRIDGE_REF = ri > 0 ? process.argv[ri + 1] : process.env.QALINK_BRIDGE_REF
 const pi = process.argv.indexOf('--python');
 const PYEMBED = pi > 0 ? resolve(process.argv[pi + 1]) : process.env.QALINK_PYTHON_EMBED ? resolve(process.env.QALINK_PYTHON_EMBED) : '';
 if (PYEMBED && !BRIDGE) throw new Error('--python needs --bridge (the Python runs the bundled bridge)');
+// --sample <dir>: dc-qalink's sample game, staged (make -C example/demo3d OUT=build stage: build/stage), bundled as
+// resources/sample for the set-up's "Start with the sample game". QALINK_SAMPLE_SRC works too; without it the app looks
+// beside the bridge (example/demo3d/build/stage) and offers no sample when there is none.
+const si = process.argv.indexOf('--sample');
+const SAMPLE = si > 0 ? resolve(process.argv[si + 1]) : process.env.QALINK_SAMPLE_SRC ? resolve(process.env.QALINK_SAMPLE_SRC) : '';
+if (SAMPLE && !existsSync(join(SAMPLE, 'demo3d.elf'))) throw new Error(`--sample ${SAMPLE}: no demo3d.elf there (stage it first)`);
 let pyInfo = null;   // the bundled Python's versions, when --python is given
 const CHANNEL = pkg_channel();
 function pkg_channel() { try { return JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).releaseChannel ?? ''; } catch { return ''; } }
@@ -55,6 +61,7 @@ cpSync(join(root, 'public/demo-session.jsonl'), join(STAGE, 'res/tools/demo-sess
 cpSync(join(root, 'build/icon.png'), join(STAGE, 'res/icon.png'));
 
 // dc-qalink's bridge (MIT), only its pc/ folder and licence: Python sources and the MCP tool list, no caches
+if (SAMPLE) cpSync(SAMPLE, join(STAGE, 'res/sample'), { recursive: true });
 if (BRIDGE) {
   if (!existsSync(join(BRIDGE, 'pc', 'qalink_bridge.py'))) throw new Error(`--bridge ${BRIDGE}: no pc/qalink_bridge.py there`);
   cpSync(join(BRIDGE, 'pc'), join(STAGE, 'res/bridge/pc'), { recursive: true, filter: (s) => !/[\\/](__pycache__|ev)([\\/]|$)|\.pyc$/.test(s.slice(BRIDGE.length)) });
@@ -89,7 +96,7 @@ rmSync(OUT, { recursive: true, force: true });
 const [dir] = await packager({
   dir: join(STAGE, 'app'), out: OUT, name: pkg.productName, executableName: pkg.productName, platform: 'win32', arch: 'x64', electronVersion,
   icon: join(root, 'build/icon.ico'), asar: true, prune: false, overwrite: true, quiet: true,
-  extraResource: [join(STAGE, 'res/tools'), join(STAGE, 'res/icon.png'), ...(BRIDGE ? [join(STAGE, 'res/bridge')] : [])],
+  extraResource: [join(STAGE, 'res/tools'), join(STAGE, 'res/icon.png'), ...(BRIDGE ? [join(STAGE, 'res/bridge')] : []), ...(SAMPLE ? [join(STAGE, 'res/sample')] : [])],
   appVersion: pkg.version, appCopyright: 'MIT licence; built on dc-qalink',
   win32metadata: { CompanyName: 'dc-qalink', FileDescription: pkg.productName, ProductName: pkg.productName, InternalName: pkg.name },
 });

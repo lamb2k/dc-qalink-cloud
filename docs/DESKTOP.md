@@ -38,7 +38,29 @@ npm run app:capture                # test mode: each case renders offscreen, cap
 | `networkInterfaces()` | this PC's interfaces, with `lan` on the one the console can reach (private IPv4, not virtual) |
 | `programs()`, `startProgram(id)`, `stopProgram(id)`, `onProgram(cb)` | the bridge and Flycast: state, pid, last lines |
 | `chooseFlycast()`, `prepareFlycast()` | pick flycast.exe with the system dialog; make the app's own Flycast settings folder |
-| `settings()`, `setSetting(key, value)` | `startBridgeOnLaunch`, `bridgeAddress` (local only), `mcpLocal` |
+| `settings()`, `setSetting(key, value)` | `startBridgeOnLaunch`, `bridgeAddress` (local only), `mcpLocal`, `consoleOnNetwork`, `autoconnect`, `connection` (`bba`, `modem`, `flycast`) |
+| `builds()`, `chooseBuilds()`, `useSample()` | the builds folder: the one folder shared with the console. Chosen with the system folder dialog, or the bundled sample game copied once into the app's data folder (`<data>/sample`); a running bridge restarts with it |
+| `readBuild(name)` | a program (`.elf`, `.bin`) by its plain name in the builds folder; a folder in the name, `..`, a link out of the folder or another kind is refused |
+| `swapSampleTexture()` | the sample's floor (`DEMO3D/FLOOR.BMP`) and `extras/FLOOR_ALT.BMP` trade places (only when the builds folder is the sample) |
+
+## The first-run set-up
+1. **How is your Dreamcast connected?** Broadband adapter, modem with a DreamPi, or Flycast only (`connection`).
+2. **Your builds** (adapter and Flycast): a folder picker or "Start with the sample game". That folder is the bridge's
+   `--files`, `--overlay` (the network disc) and `--asset-root`; the page says in one line that only this folder is
+   shared with the console. **Modem:** no such step; builds are pushed only, the bridge gets `--asset-root` alone, and
+   the network step says why (the network disc is too slow over the modem).
+3. The network (console), the loader on the SD card (GDEMU and openMenu named; the loader from the bridge or the
+   dc-qalink releases page; the app never writes a card), Flycast (Flycast only), find the console.
+4. **First run**: the builds folder's program (the sample's `demo3d.elf` first) pushed, live data read, the screen grabbed
+   (the game paused for the grab, so the picture is whole).
+5. **Try it**: swap the texture, push again (RESET, push, grab), open the menu, the crash button, RESET.
+Settings, "Console and builds", keeps every answer editable.
+
+The sample: settings.json `sampleDir`, else `QALINK_SAMPLE`, else the packaged `resources/sample`
+(`npm run app:dist -- --sample <dc-qalink>/example/demo3d/build/stage`), else `<bridgeDir>/example/demo3d/build/stage`.
+`tools/onboarding-flow.mjs --settings <machine.json> --out <dir> [--demo-shots]` drives the whole set-up in test mode
+against a running loader (Flycast or a console) and writes a picture of each step and `flow.json` (each step timed, two
+controls: a program outside the folder is refused; the modem shows no builds step).
 
 ## The bridge in the app
 The program `bridge` is **dc-qalink's real bridge** (Python, contract 1) when the app can find it, else the mock bridge
@@ -46,9 +68,10 @@ The program `bridge` is **dc-qalink's real bridge** (Python, contract 1) when th
 `realBridge()`): `settings.json`'s `bridgeDir` (a dc-qalink checkout; the page cannot set it), else `QALINK_DCQALINK`,
 else the packaged `resources/bridge`. Which Python: `bridgePython`, else `QALINK_PYTHON`, else the bundled embeddable
 `resources/bridge/python/python.exe`, else the system `python`. `bridgeArgs` (settings.json only) adds the bridge's own
-options (`--selftest`, `--loader-disc`, `--files`). The command line is
-`<python> -I <dc-qalink>/pc/qalink_bridge.py --port 52080 --data <app data>/bridge [--mcp-http 52081]` (the HTTP MCP
-when "Local MCP" is on); the Agents snippets name the same script with `--mcp stdio`.
+options (`--selftest`, `--loader-disc`). The command line is
+`<python> -I <dc-qalink>/pc/qalink_bridge.py --port 52080 --data <app data>/bridge [--mcp-http 52081]
+[--files <builds> --overlay <builds>] [--asset-root <builds>]` (the HTTP MCP when "Local MCP" is on; the builds folder
+as above); the Agents snippets name the same script with `--mcp stdio`.
 The release zip bundles dc-qalink's `pc/` folder (a pinned commit, MIT) as `resources/bridge` **and its own Python**
 in `resources/bridge/python/`, so the PC needs no Python at all:
 - the official **Python embeddable package 3.12.10** for Windows x64 (no installer, no registry), its MD5 checked

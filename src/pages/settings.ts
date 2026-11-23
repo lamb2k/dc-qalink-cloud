@@ -5,7 +5,8 @@ import { BRIDGE_API_VERSION, ENDPOINTS, uiDevice, type C1Device, type DeviceInfo
 import { bget, DEFAULT_BRIDGE } from '../data/bridge-client';
 import { SESSION_FORMAT_VERSION } from '../data/format';
 import { MCP_TOOLS, MCP_TOOLS_VERSION } from '../data/mcp-tools';
-import { desktop, type AppInfo, type AppSettings, type NetIf, type ProgramStatus } from '../platform/desktop';
+import { desktop, type AppInfo, type AppSettings, type BuildsInfo, type Connection, type NetIf, type ProgramStatus } from '../platform/desktop';
+import { MODEM_NO_DISC } from './setup';
 import { esc, h, iconSvg, save, store } from '../ui/dom';
 import { btn, empty } from '../editors/base';
 import type { Page } from './page';
@@ -44,12 +45,12 @@ export class SettingsPage implements Page {
   el = h('div', { class: 'page' });
   private v = 0; private built = '';
   private info: AppInfo | null = null; private settings: AppSettings | null = null; private progs: ProgramStatus[] = []; private nets: NetIf[] = [];
-  private devices: DeviceInfo[] | null = null; private devFor = '';
+  private devices: DeviceInfo[] | null = null; private devFor = ''; private builds: BuildsInfo | null = null;
   private off: (() => void) | null = null;
   constructor(private app: App) {
     const q = desktop();
     if (q) {
-      void Promise.all([q.info(), q.settings(), q.programs(), q.networkInterfaces()]).then(([i, s, p, n]) => { this.info = i; this.settings = s; this.progs = p; this.nets = n; this.v++; });
+      void Promise.all([q.info(), q.settings(), q.programs(), q.networkInterfaces(), q.builds()]).then(([i, s, p, n, b]) => { this.info = i; this.settings = s; this.progs = p; this.nets = n; this.builds = b; this.v++; });
       this.off = q.onProgram((s) => { this.progs = this.progs.map((x) => (x.id === s.id ? s : x)); this.v++; });
     }
   }
@@ -65,7 +66,7 @@ export class SettingsPage implements Page {
     const head = h('div', { class: 'page-head' }, h('div', null, h('div', { class: 'eyebrow' }, 'QA Link Cloud'), h('h1', null, 'Settings'), h('p', null, desktop() ? 'Saved in the app\'s own folder on this PC.' : 'Saved in this browser. The desktop app adds programs, files and this PC\'s network.')),
       h('div', { class: 'actions' }, btn('Set up a console', () => this.app.cmds.run('setup.open'), { icon: 'sparkles', primary: true })));
     const col = (...c: HTMLElement[]) => h('div', { class: 'col' }, ...c);
-    this.el.replaceChildren(head, h('div', { class: 'grid-2' }, col(this.devicesCard(), this.programsCard(), this.networkCard()), col(this.remoteCard(), this.appearanceCard(), this.aboutCard())), this.agentsCard());
+    this.el.replaceChildren(head, h('div', { class: 'grid-2' }, col(this.buildsCard(), this.devicesCard(), this.programsCard(), this.networkCard()), col(this.remoteCard(), this.appearanceCard(), this.aboutCard())), this.agentsCard());
   }
 
   private devicesCard(): HTMLElement {
@@ -78,6 +79,24 @@ export class SettingsPage implements Page {
     return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('monitor') }, h('h2', null, 'Devices'), h('span', { class: 'meta' }, this.devices ? `${rows.length} known to the bridge` : 'bridge not answering')),
       h('div', { class: 'card-body flush' }, body),
       h('div', { class: 'card-foot' }, h('span', null, 'Consoles are found by the loader\'s beacon on the local network.'), btn('Find a console', () => this.app.openSetup('find'), { small: true, icon: 'search' })));
+  }
+
+  /** the set-up's answers, editable: how the console connects and the one folder it sees */
+  private buildsCard(): HTMLElement {
+    const q = desktop(); const b = this.builds; const k = (this.settings?.connection || '') as Connection | '';
+    const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'How the Dreamcast connects' });
+    for (const [t, l] of [['bba', 'Adapter'], ['modem', 'Modem'], ['flycast', 'Flycast']] as const) {
+      const x = h('button', { class: k === t ? 'is-on' : '', 'aria-pressed': String(k === t), disabled: !q }, l);
+      x.addEventListener('click', async () => { if (!q) return; this.settings = await q.setSetting('connection', t); this.builds = await q.builds(); this.v++; this.app.toast('ok', 'Connection saved', 'A running bridge restarts with it.'); });
+      seg.append(x);
+    }
+    const pick = (sample: boolean) => async () => { if (!q) return; try { this.builds = sample ? await q.useSample() : await q.chooseBuilds(); this.v++; } catch (e) { this.app.toast('err', 'Could not use that folder', String(e)); } };
+    const body = h('div', { class: 'card-body' },
+      h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'How the Dreamcast connects'), h('div', { class: 'd' }, k === 'modem' ? MODEM_NO_DISC : 'Asked by the set-up; change it here.')), h('div', { class: 'ctl' }, q ? seg : deskOnly())),
+      h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'Builds folder'), h('div', { class: 'd mono' }, b?.root ? (b.sample ? `the sample game: ${b.root}` : b.root) : 'not chosen'), h('div', { class: 'd' }, b?.root ? `Only this folder is shared with the console (${b.shared}).` : 'The bridge shares nothing until a folder is chosen.')),
+        h('div', { class: 'ctl' }, q ? btn('Choose...', pick(false), { small: true, icon: 'folder-open' }) : deskOnly(), q && b?.sampleAvailable && !b.sample ? btn('Use the sample', pick(true), { small: true, icon: 'gamepad-2' }) : null)));
+    return h('section', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('folder-open') }, h('h2', null, 'Console and builds'), h('span', { class: 'meta' }, b?.programs.length ? `${b.programs.length} program${b.programs.length > 1 ? 's' : ''}` : '')), body,
+      h('div', { class: 'card-foot' }, h('span', null, 'The bridge serves the folder as /pc files, the network disc overlay and the asset root.'), btn('Run the set-up again', () => this.app.cmds.run('setup.open'), { small: true, icon: 'sparkles' })));
   }
 
   private remoteCard(): HTMLElement {
