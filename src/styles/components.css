@@ -215,7 +215,8 @@ body {
 .ws { display: grid; grid-template-rows: var(--h-topbar) 1fr auto var(--h-control); height: 100vh; background: var(--bg-app); overflow: hidden; }
 .ws-top { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-2) 0 var(--s-3); background: var(--bg-panel); border-bottom: var(--bw) solid var(--border); }
 .brand { display: flex; align-items: center; gap: var(--s-2); font-weight: var(--fw-semibold); color: var(--text-strong); font-size: var(--fs-md); white-space: nowrap; }
-.brand-mark { width: var(--s-5); height: var(--s-5); border-radius: var(--r-2); background: var(--text-strong); color: var(--bg-panel); display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: var(--fw-semibold); }
+.brand-mark { width: var(--s-5); height: var(--s-5); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.brand-mark svg { width: 100%; height: 100%; display: block; }
 .brand .sub { color: var(--text-faint); font-weight: var(--fw-regular); }
 .wstabs { display: flex; align-items: stretch; height: 100%; gap: var(--s-half); margin-left: var(--s-4); }
 .wstab { display: inline-flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-3); color: var(--text-muted); font-weight: var(--fw-medium); border-bottom: var(--bw-2) solid transparent; border-top: var(--bw-2) solid transparent; }
