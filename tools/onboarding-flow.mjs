@@ -73,10 +73,13 @@ const flow = async () => {
     await q.startProgram('bridge');
     const bridgeArgs = (await q.programs()).find((p) => p.id === 'bridge');
     // "Link by itself" (on by default) links the loader the bridge hears; the page shows Linked
-    const linked = await until(() => /Linked:/.test(page()?.textContent || ''), 90000);
+    // with "Link by itself" off (machine settings autoconnect false) the Link button links: pressed when it shows
+    let pressed = 0;
+    const linked = await until(() => { const l = [...(page()?.querySelectorAll('button') || [])].find((x) => /^Link$/.test(x.textContent.trim())); if (l && !l.disabled) { l.click(); pressed++; } return /Linked:/.test(page()?.textContent || ''); }, 90000);
+    out.link_button_presses = pressed;
     out.found_s = sec() - tFind;
     redact(); await shot('4-find');
-    note('console found and linked', linked, { seconds: out.found_s, bridge: bridgeArgs?.label });
+    note('console found and linked', linked, { seconds: out.found_s, bridge: bridgeArgs?.label, link_button_presses: pressed });
     // 5. first run: push the sample, live data, a grab
     studio.openSetup('test'); await sleep(400);
     const tRun = sec();
@@ -110,6 +113,9 @@ const flow = async () => {
     r = await doTry(/^RESET$/, 90000); redact(); await shot('6e-reset');
     note('RESET', /RESET: back at the loader/.test(r.line), r);
   } catch (e) { note('flow error', false, { error: String(e && e.stack || e) }); }
+  // diagnostics: the bridge's runs and its last output lines
+  try { const B = studio.bridgeUrl; out.runs = (await (await fetch(`${B}/v0/runs`, { headers: { 'X-Contract': '1' } })).json()).runs.map((r) => ({ id: r.id, state: r.state, error: r.error, times: r.times, name: r.program?.name })); } catch (e) { out.runs = String(e); }
+  try { out.bridge_output = (await q.programs()).find((p) => p.id === 'bridge')?.output; } catch { /* none */ }
   out.total_s = sec();
   window.__qlDone = out;
 };

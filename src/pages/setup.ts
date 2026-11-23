@@ -5,9 +5,9 @@
 // the network and the loader on the SD card; find the console; the first run (push the sample, live data, a grab); and
 // what to try next (swap the texture, the menu, the crash button, RESET). Settings keeps every answer editable.
 import type { App } from '../ui/app';
-import { ENDPOINTS, uiRun, type C1Run, type C1Still, type Discovery, type LiveSummary, type PadStep, type RunRecord } from '../data/bridge-api';
+import { ENDPOINTS, uiDiscovery, uiRun, type C1Discovery, type C1Run, type C1Still, type Discovery, type LiveSummary, type PadStep, type RunRecord } from '../data/bridge-api';
 import type { GrabRecord } from '../data/format';
-import { bbytes, bget, bpost, discovery, pushProgram, sendCommand } from '../data/bridge-client';
+import { bbytes, bget, bpost, pushProgram, sendCommand } from '../data/bridge-client';
 import { desktop, type AppInfo, type BuildsInfo, type Connection, type NetIf, type ProgramStatus } from '../platform/desktop';
 import { download, esc, h, iconSvg, save, store } from '../ui/dom';
 import { btn } from '../editors/base';
@@ -27,7 +27,8 @@ const TITLES: Record<StepId, [string, string]> = {
   agents: ['Agents', 'Optional: MCP for Claude Code or Codex'], done: ['Try it', 'What to try next'],
 };
 
-type FindState = { kind: 'nobridge' | 'waiting' | 'seen' | 'linking' | 'linked'; address?: string; ip?: string; device?: string; label?: string };
+// heard: the address the bridge hears the loader from (what its own auto-link chooses by; for Flycast, this PC's)
+type FindState = { kind: 'nobridge' | 'waiting' | 'seen' | 'linking' | 'linked'; address?: string; ip?: string; heard?: string; device?: string; label?: string };
 type TestState = { kind: 'idle' | 'running' | 'passed' | 'failed'; run?: RunRecord; grab?: GrabRecord; error?: string; summary?: LiveSummary; times?: Record<string, number>; program?: string };
 type TryState = { busy: string; line: string; grab?: GrabRecord; crash?: { pc: string; pr: string; event: string } };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -85,18 +86,18 @@ export class SetupPage implements Page {
   private async discover(): Promise<void> {
     if (this.find.kind === 'linking' || this.find.kind === 'linked') return;
     try {
-      const d: Discovery = await discovery(this.app.bridgeUrl);
+      const raw = await bget<C1Discovery>(this.app.bridgeUrl, ENDPOINTS.discovery, 1500); const d: Discovery = uiDiscovery(raw);
       const want = this.s.console ? 'console' : 'flycast';
       // the one the bridge linked by itself (autoconnect) first, then the kind the person set up
       const hit = d.seen.find((x) => x.chosen) ?? d.seen.find((x) => x.kind === want) ?? (this.s.flycast ? d.seen.find((x) => x.kind === 'flycast') : undefined);
       if (hit?.chosen && this.app.source.kind !== 'live') void this.app.connect(this.app.bridgeUrl);
-      const nk: FindState = hit ? { kind: hit.chosen ? 'linked' : 'seen', address: hit.address, ip: hit.address, device: hit.id, label: hit.kind === 'console' ? `Dreamcast, ${hit.transport === 'bba' ? 'broadband adapter' : 'modem'}` : 'Flycast on this PC' } : { kind: 'waiting' };
+      const nk: FindState = hit ? { kind: hit.chosen ? 'linked' : 'seen', address: hit.address, ip: hit.address, heard: raw.seen.find((x) => x.id === hit.id)?.address, device: hit.id, label: hit.kind === 'console' ? `Dreamcast, ${hit.transport === 'bba' ? 'broadband adapter' : 'modem'}` : 'Flycast on this PC' } : { kind: 'waiting' };
       if (nk.kind !== this.find.kind || nk.address !== this.find.address) { this.find = nk; this.bump(); }
     } catch { if (this.find.kind !== 'nobridge') { this.find = { kind: 'nobridge' }; this.bump(); } }
   }
   private async link(): Promise<void> {
     if (!this.find.device) return; this.find = { ...this.find, kind: 'linking' }; this.bump();
-    try { await bpost(this.app.bridgeUrl, ENDPOINTS.link, { console_ip: this.find.ip, device: this.find.device }); this.find = { ...this.find, kind: 'linked' }; if (this.app.source.kind !== 'live') await this.app.connect(this.app.bridgeUrl); }
+    try { await bpost(this.app.bridgeUrl, ENDPOINTS.link, { address: this.find.heard ?? this.find.ip, device: this.find.device }); this.find = { ...this.find, kind: 'linked' }; if (this.app.source.kind !== 'live') await this.app.connect(this.app.bridgeUrl); }
     catch (e) { this.find = { ...this.find, kind: 'seen' }; this.app.toast('err', 'Could not link', String(e)); }
     this.bump();
   }
@@ -120,7 +121,7 @@ export class SetupPage implements Page {
       let r = await pushProgram(B, name, f.bytes, {}); mark('pushed'); this.runId = r.id; this.test = { kind: 'running', run: r, times, program: name }; this.bump();
       const end = Date.now() + 60000;
       while (['queued', 'pushing'].includes(r.state) && Date.now() < end) { await sleep(250); r = uiRun(await bget<C1Run>(B, ENDPOINTS.run(r.id))); }
-      if (r.state !== 'running') throw new Error(`The program ended "${r.bridgeState}" before it ran.`);
+      if (r.state !== 'running') throw new Error(`The program ended "${r.bridgeState}" before it ran${r.error ? `: ${r.error}` : ''}.`);
       mark('running'); this.test = { ...this.test, run: r }; this.bump();
       let sm: LiveSummary | undefined;
       for (let i = 0; i < 40 && !(sm && sm.pictures > 60); i++) { await sleep(250); try { sm = await bget<LiveSummary>(B, ENDPOINTS.summary); } catch { /* not yet */ } }
@@ -135,10 +136,14 @@ export class SetupPage implements Page {
   private async grab(): Promise<GrabRecord | undefined> {
     const B = this.app.bridgeUrl;
     // the client reads the shown frame buffer in pieces: the game paused for the read keeps the picture whole
-    const paused = (await sendCommand(B, { cmd: 'pause' }).catch(() => ({ ok: false }))).ok;
-    let st: C1Still;
-    try { await sleep(100); st = await bpost<C1Still>(B, ENDPOINTS.stills, {}, 40000); }
-    finally { if (paused) await sendCommand(B, { cmd: 'resume' }).catch(() => undefined); }
+    // a program just started links a moment after its first pictures: "no program linked" (409) is tried again for 10 s
+    let st: C1Still | undefined;
+    for (let i = 0; !st; i++) {
+      const paused = (await sendCommand(B, { cmd: 'pause' }).catch(() => ({ ok: false }))).ok;
+      try { await sleep(100); st = await bpost<C1Still>(B, ENDPOINTS.stills, {}, 40000); }
+      catch (e) { if (i >= 20 || !/no program linked/.test(String((e as Error).message))) throw e; await sleep(400); }
+      finally { if (paused) await sendCommand(B, { cmd: 'resume' }).catch(() => undefined); }
+    }
     const png = await bbytes(B, ENDPOINTS.still(st.id));
     let b = ''; for (let i = 0; i < png.bytes.length; i += 0x8000) b += String.fromCharCode(...png.bytes.subarray(i, i + 0x8000));
     return { t: 'grab', n: st.picture, w: st.width, h: st.height, fmt: 'png', data: btoa(b), label: `still ${st.id} (${st.tier})` } as GrabRecord;
@@ -286,7 +291,7 @@ export class SetupPage implements Page {
           q ? h('div', { class: 'card' }, h('div', { class: 'card-body' },
             h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'flycast.exe'), h('div', { class: 'd mono' }, st?.configured ? st.detail : 'not chosen yet')), h('div', { class: 'ctl' }, btn(st?.configured ? 'Change' : 'Choose flycast.exe', async () => { this.fly = await q.chooseFlycast(); this.bump(); }, { small: true, icon: 'folder-open' }))),
             h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'The app\'s Flycast settings'), h('div', { class: 'd mono' }, this.flyDir || 'not made yet')), h('div', { class: 'ctl' }, btn(this.flyDir ? 'Made' : 'Make them', async () => { const r = await q.prepareFlycast(); this.flyDir = r.dir; this.bump(); A.toast('ok', 'Flycast settings ready', r.note); }, { small: true, icon: 'settings', disabled: !!this.flyDir }))),
-            h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'Start Flycast'), h('div', { class: 'd' }, 'Then load the loader disc image in it.')), h('div', { class: 'ctl' }, st?.running ? h('span', { class: 'pill ok' }, `running, pid ${st.pid}`) : btn('Start', () => void q.startProgram('flycast').catch((e) => A.toast('err', 'Could not start Flycast', String(e))), { small: true, icon: 'play', disabled: !st?.configured || !this.flyDir })))))
+            h('div', { class: 'set-row' }, h('div', null, h('div', { class: 'l' }, 'Start Flycast'), h('div', { class: 'd' }, 'Starts the bridge first, then Flycast: load the loader disc image in it.')), h('div', { class: 'ctl' }, st?.running ? h('span', { class: 'pill ok' }, `running, pid ${st.pid}`) : btn('Start', () => void q.startProgram('flycast').catch((e) => A.toast('err', 'Could not start Flycast', String(e))), { small: true, icon: 'play', disabled: !st?.configured || !this.flyDir })))))
             : h('div', { class: 'callout', html: iconSvg('app-window') }, h('p', null, 'Starting Flycast needs the desktop app. On the web page, start Flycast yourself with the loader disc and the broadband adapter on.'))];
       }
       case 'find': {
@@ -307,7 +312,7 @@ export class SetupPage implements Page {
         const left = h('div', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('rocket') }, h('h2', null, first ? 'The sample game' : 'Test program'), h('span', { class: 'meta' }, t.run ? `${t.run.file}, ${t.run.state}` : first ? (this.builds?.programs.includes('demo3d.elf') ? 'demo3d.elf' : this.builds?.programs[0] ?? 'no program') : 'qalink-test.elf')),
           h('div', { class: 'card-body' }, t.run ? h('dl', { class: 'kv', 'data-first-run': t.kind }, h('dt', null, 'Sent'), h('dd', null, `${t.run.bytes.toLocaleString('en-GB')} B, hash ${t.run.sha256.slice(0, 12)} checked`), h('dt', null, 'State'), h('dd', null, t.run.state),
             ...(t.times ? Object.entries(t.times).map(([k, v]) => [h('dt', null, k === 'pushed' ? 'Pushed' : k === 'running' ? 'Running' : k === 'live' ? 'Live data' : 'Grab'), h('dd', null, `${v.toFixed(1)} s after the push began`)]).flat() : []),
-            ...(sm ? [h('dt', null, 'Pictures'), h('dd', null, sm.pictures.toLocaleString('en-GB')), ...(frame ? [h('dt', null, frame.label), h('dd', null, `${(frame.mean / 1000).toFixed(2)} ms mean, worst ${(frame.worst / 1000).toFixed(2)} ms`)] : []), ...sm.guards.map((g) => [h('dt', null, g.name), h('dd', null, String(g.value))]).flat(), h('dt', null, 'Tier'), h('dd', null, sm.tier)] : []),
+            ...(sm ? [h('dt', null, 'Pictures'), h('dd', null, sm.pictures.toLocaleString('en-GB')), ...(frame ? [h('dt', null, frame.label), h('dd', null, `${frame.mean.toFixed(2)} ms mean, worst ${frame.worst.toFixed(2)} ms`)] : []), ...sm.guards.map((g) => [h('dt', null, g.name), h('dd', null, String(g.value))]).flat(), h('dt', null, 'Tier'), h('dd', null, sm.tier)] : []),
             ...(r ? [h('dt', null, 'Ran'), h('dd', null, `${r.seconds} s, ${r.pictures} pictures, exit ${r.exit}`), ...r.numbers.flatMap((x) => [h('dt', null, x.label), h('dd', null, `${x.value} ${x.unit}`)])] : []))
             : h('div', { class: 'faint' }, first ? 'Pushes the program from your builds folder, waits for its live data and grabs its screen. It keeps running: the next page has things to try with it.' : 'A small program from the bridge: it draws a test picture, reports its timings and returns to the loader.')));
         const right = h('div', { class: 'card' }, h('div', { class: 'card-head', html: iconSvg('camera') }, h('h2', null, 'Screen grab'), h('span', { class: 'meta' }, t.grab ? `picture ${t.grab.n}, ${t.grab.w}x${t.grab.h}` : '')),

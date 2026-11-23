@@ -55,6 +55,11 @@ npm run app:capture                # test mode: each case renders offscreen, cap
    (the game paused for the grab, so the picture is whole).
 5. **Try it**: swap the texture, push again (RESET, push, grab), open the menu, the crash button, RESET.
 Settings, "Console and builds", keeps every answer editable.
+Starting Flycast from the app starts the bridge first: in Flycast, a bridge started after the loader had called for
+about 15 s to a closed port heard its beacons but got no answer to LOAD (lane ql-demo, 2026-11-23). The "Link" button
+sends the address the bridge hears the loader from (what its own auto-link uses); the console's own address is
+refused by a bridge that talks only to this PC. Grabs pause the game for the read and are tried again for up to 10 s
+while a just-started program has not linked yet.
 
 The sample: settings.json `sampleDir`, else `QALINK_SAMPLE`, else the packaged `resources/sample`
 (`npm run app:dist -- --sample <dc-qalink>/example/demo3d/build/stage`), else `<bridgeDir>/example/demo3d/build/stage`.

@@ -221,7 +221,13 @@ function stopProgram(id) { const p = progs[id]; if (p.child) { try { process.pla
 const PROG_IDS = ['bridge', 'flycast'];
 const progId = (id) => { if (!PROG_IDS.includes(id)) throw new Error(`unknown program ${id}`); return id; };
 handle('prog:list', () => PROG_IDS.map(progStatus));
-handle('prog:start', (_e, id) => startProgram(progId(id)));
+// Flycast: the bridge first, so its port is open when the loader first calls. Seen in Flycast (lane ql-demo, 2026-11-23):
+// a bridge started after the loader had beaconed about 15 s to a closed port heard the beacons, but the loader never
+// answered LOAD ("no answer to LOAD within 30 s"); a bridge already listening at boot pushes at once.
+handle('prog:start', async (_e, id) => {
+  if (progId(id) === 'flycast' && !progs.bridge.child && progSpec('bridge').configured) { startProgram('bridge'); await new Promise((r) => setTimeout(r, 800)); }
+  return startProgram(progId(id));
+});
 handle('prog:stop', (_e, id) => stopProgram(progId(id)));
 handle('prog:choose-flycast', async (e) => {
   const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Choose flycast.exe', properties: ['openFile'], filters: [{ name: 'Flycast', extensions: ['exe'] }] });
