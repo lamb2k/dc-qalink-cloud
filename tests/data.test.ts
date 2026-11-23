@@ -215,3 +215,23 @@ describe('row values the meta does not declare', () => {
     expect(st.value('room', 5000)).toBe(7); expect(st.xAt('room', 1)).toBe(0x101);
   });
 });
+
+describe('printed lines (t "line") in the Log', () => {
+  const row = (n: number): SessionRecord => ({ t: 'row', n, ph: { draw: 4, frame: 33 } });
+  const line = (text: string, seq: number): SessionRecord => ({ t: 'line', run: 'r1', seq, text });
+  const stream: SessionRecord[] = [meta, line('started\n', 1), row(1), row(2), line('cube taken 1', 2), { t: 'log', n: 2, lv: 'warn', msg: 'slow' }, row(3), line('cube taken 2\r\n', 3)];
+  it('live: shown in order, at the latest picture, as serial', () => {
+    const st = new SessionStore(); st.appendMany(stream);
+    expect(st.logs.map((l) => [l.n, l.lv, l.msg])).toEqual([[0, 'serial', 'started'], [2, 'serial', 'cube taken 1'], [2, 'warn', 'slow'], [3, 'serial', 'cube taken 2']]);
+    st.truncate(2); expect(st.logs.map((l) => l.msg)).toEqual(['started', 'cube taken 1', 'slow']);
+  });
+  it('replay: a session file with lines plays them after the row before them', () => {
+    let t = 0; const src = new ReplaySource(stream, { now: () => t, startAt: 0 });
+    src.seek(3); t = 1e9; src.pause();
+    expect(src.store.logs.filter((l) => l.lv === 'serial').map((l) => [l.n, l.msg])).toEqual([[0, 'started'], [2, 'cube taken 1'], [3, 'cube taken 2']]);
+  });
+  it('bounded: long lines are cut', () => {
+    const st = new SessionStore(); st.appendMany([meta, line('x'.repeat(2000), 1)]);
+    expect(st.logs[0].msg.length).toBe(500);
+  });
+});

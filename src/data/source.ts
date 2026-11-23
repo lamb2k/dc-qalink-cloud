@@ -106,7 +106,9 @@ export class ReplaySource extends Emitter implements Source {
     const meta = records.find((r) => r.t === 'meta');
     if (!meta || meta.t !== 'meta') throw new Error('session has no meta record');
     // order by picture; records with no picture (loading log lines) come first; stable within a picture
-    const keyed = records.filter((r) => r.t !== 'meta').map((r, i) => ({ r, i, n: recPicture(r) }));
+    // a printed line (t "line") has no picture: it belongs to the latest row before it in the file
+    let lastRow = 0;
+    const keyed = records.filter((r) => r.t !== 'meta').map((r, i) => { if (r.t === 'row') lastRow = Math.max(lastRow, r.n); return { r, i, n: r.t === 'line' ? lastRow : recPicture(r) }; });
     keyed.sort((a, b) => a.n - b.n || a.i - b.i);
     this.recs = keyed.map((k) => k.r); this.recN = keyed.map((k) => k.n);
     this.store.reset(meta);

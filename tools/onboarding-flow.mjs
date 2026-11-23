@@ -103,6 +103,17 @@ const flow = async () => {
     r = await doTry(/^Push again$/, 120000);
     redact(); await shot('6b-pushed-again');
     note('pushed again', /Pushed .* again/.test(r.line), r);
+    // what the program prints (the bridge's t "line" records) reaches the Log panel: the sample prints
+    // "demo3d: ..." lines, one per cube the autopilot takes
+    {
+      const t0 = sec(); const printed = () => studio.store.logs.filter((l) => l.lv === 'serial').map((l) => l.msg);
+      await until(() => printed().some((m) => /^demo3d: cube taken/.test(m)), 20000);
+      studio.setWorkspace('link'); await sleep(1200); redact(); await shot('6b2-log-panel');
+      const lines = printed();
+      note('printed lines in the Log panel', lines.some((m) => /^demo3d: cube taken/.test(m)) && !!document.querySelector('.ln.serial'),
+        { seconds: Math.round((sec() - t0) * 100) / 100, serial: lines.length, first: lines.slice(0, 3) });
+      studio.openSetup('done'); await sleep(500);
+    }
     const fb = await floor(before), fa = await floor(grabData());
     out.floor = { first_run: fb, after_swap: fa };
     note('the swapped texture shows on the next push', !!fb && !!fa && Math.abs(fa[0] - fb[0]) + Math.abs(fa[2] - fb[2]) > 40, out.floor);

@@ -7,6 +7,9 @@ export interface TraceEvent { lane: number; start: number; end: number; label: s
 export interface Stats { mean: number; p95: number; worst: number; at: number; over: number; n: number }
 
 const NONE = Number.NaN;
+/** The log keeps at most LOG_MAX lines (structured and printed); past it the oldest tenth goes. A printed line is cut
+ *  to LINE_MAX characters. */
+export const LOG_MAX = 50000, LINE_MAX = 500;
 /** Row fields the meta does not declare are kept too, within bounds: at most X_KEYS keys; numbers get a column like a
  *  declared extra (so they can be plotted); strings (cut to X_STR characters) and arrays (numbers only, the first
  *  X_ARR) are kept as changes, at most X_CHANGES per key (the oldest go first). */
@@ -51,7 +54,7 @@ export class SessionStore {
   xDropped = 0;
 
   reset(meta: MetaRecord | null = null): void {
-    this.meta = meta; this.maxN = 0; this.count = 0; this.ended = false;
+    this.meta = meta; this.maxN = 0; this.count = 0; this.ended = false; this.logsDropped = 0;
     this.cap = 0; this.cols.clear(); this.fields = new Uint8Array(0); this.have = new Uint8Array(0);
     this.logs = []; this.logN = []; this.trace = []; this.laneMaxDur = []; this.traceCount = 0;
     this.lanes = meta?.lanes ? [...meta.lanes] : [];
@@ -90,7 +93,9 @@ export class SessionStore {
     switch (r.t) {
       case 'meta': this.reset(r); return;
       case 'row': this.addRow(r); break;
-      case 'log': this.logs.push(r); this.logN.push(r.n ?? 0); break;
+      case 'log': this.addLog(r, r.n ?? 0); break;
+      // what the program printed: a log line at the latest picture (0 before the first row)
+      case 'line': this.addLog({ t: 'log', n: this.maxN, lv: 'serial', msg: String(r.text ?? '').replace(/\r?\n$/, '').slice(0, LINE_MAX) }, this.maxN); break;
       case 'trace': this.addTrace(r); break;
       case 'grab': this.addSorted(this.grabs, r); break;
       case 'ctr': this.addSorted(this.counters, r); break;
@@ -135,6 +140,12 @@ export class SessionStore {
     const ch = this.xChanges.get(key); if (!ch) return undefined;
     let lo = 0, hi = ch.length; while (lo < hi) { const m = (lo + hi) >> 1; if (ch[m].n <= n) lo = m + 1; else hi = m; }
     return lo ? ch[lo - 1].v : undefined;
+  }
+  /** log lines dropped from the front to stay under LOG_MAX */
+  logsDropped = 0;
+  private addLog(r: LogRecord, n: number): void {
+    this.logs.push(r); this.logN.push(n);
+    if (this.logs.length > LOG_MAX) { const k = Math.ceil(LOG_MAX / 10); this.logs.splice(0, k); this.logN.splice(0, k); this.logsDropped += k; }
   }
   private addTrace(r: TraceRecord): void {
     let li = this.lanes.indexOf(r.lane);
