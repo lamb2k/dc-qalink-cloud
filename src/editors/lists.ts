@@ -1,7 +1,7 @@
 // List editors: Log (virtual list, filter, follows the playhead), Outliner, Properties, Counters and guards,
 // Phases table, Slowest pictures.
 import type { App } from '../ui/app';
-import type { LogRecord } from '../data/format';
+import type { LogRecord, XValue } from '../data/format';
 import { esc, fmt, h, iconSvg, int, num } from '../ui/dom';
 import { empty, toolBtn, Watch, type Editor, type EditorDef } from './base';
 
@@ -79,6 +79,28 @@ class Outliner implements Editor {
   }
 }
 
+// Undeclared row values (format.ts XValue): numbers with their last 120 pictures drawn small, short strings as text,
+// small arrays as one row per element (x, y, z, w), longer ones as a list. Integers from 0x100 also show in hex.
+const xNum = (v: number): string => (Number.isNaN(v) ? '-' : Number.isInteger(v) ? `${int(v)}${Math.abs(v) >= 0x100 ? ` <span class="faint">0x${v.toString(16)}</span>` : ''}` : fmt(v));
+function xRows(key: string, v: XValue | undefined, plot: string): string {
+  if (v === undefined) return `<dt title="${esc(key)}">${esc(key)}</dt><dd>-</dd>`;
+  if (Array.isArray(v)) {
+    if (v.length >= 2 && v.length <= 4) return v.map((e, i) => `<dt title="${esc(key)}[${i}]">${esc(key)} ${'xyzw'[i]}</dt><dd>${xNum(e)}</dd>`).join('');
+    return `<dt title="${esc(key)}">${esc(key)}</dt><dd class="mono" title="${esc(v.join(', '))}">${esc(v.map((e) => (Number.isInteger(e) ? String(e) : e.toFixed(3))).join(', '))}</dd>`;
+  }
+  if (typeof v === 'string') return `<dt title="${esc(key)}">${esc(key)}</dt><dd title="${esc(v)}">${esc(v)}</dd>`;
+  return `<dt title="${esc(key)}">${esc(key)}</dt><dd>${xNum(v)}${plot}</dd>`;
+}
+function spark(col: Float32Array | undefined, n: number): string {
+  if (!col || n < 2) return '';
+  const a = Math.max(1, n - 119); let lo = Infinity, hi = -Infinity;
+  for (let i = a; i <= n; i++) { const v = col[i]; if (!Number.isNaN(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } }
+  if (!(hi >= lo)) return '';
+  const span = hi - lo || 1; let d = ''; let pen = false;
+  for (let i = a; i <= n; i++) { const v = col[i]; if (Number.isNaN(v)) { pen = false; continue; } d += `${pen ? 'L' : 'M'}${i - a},${(14 - ((v - lo) / span) * 12).toFixed(1)}`; pen = true; }
+  return ` <svg class="xspark" viewBox="0 0 119 16" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"/></svg>`;
+}
+
 class Properties implements Editor {
   el = h('div'); bodyClass = 'scroll'; private w = new Watch();
   constructor(private app: App) {}
@@ -96,6 +118,12 @@ class Properties implements Editor {
     for (const [g, es] of groups) {
       html += `<div class="prop-section"><div class="section-title">${iconSvg('layers')}${esc(g)}</div><dl class="props">`;
       for (const e of es) { const v = st.value(e.key, n); html += `<dt>${esc(e.label)}</dt><dd>${Number.isInteger(v) ? int(v) : fmt(v)}</dd>`; }
+      html += '</dl></div>';
+    }
+    const xs = st.xFields();
+    if (xs.length) {
+      html += `<div class="prop-section"><div class="section-title">${iconSvg('binary')}Row values</div><dl class="props">`;
+      for (const x of xs) html += xRows(x.key, st.xAt(x.key, n), x.kind === 'num' ? spark(st.column(x.key), n) : '');
       html += '</dl></div>';
     }
     const ctr = st.countersAt(n); const guards = (m.counters ?? []).filter((c) => c.guard);

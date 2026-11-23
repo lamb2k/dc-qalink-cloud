@@ -48,4 +48,16 @@ describe.skipIf(!have)('the app on the real bridge (simulated console)', () => {
     expect(src.events.some((e) => e.t === 'verdict')).toBe(true);
     src.stop();
   }, 90000);
+
+  it('a pushed program sees its arguments (the simulated loader writes them into its report)', async () => {
+    const src = new LiveSource(base);
+    const bytes = new TextEncoder().encode('arguments check\n'.repeat(200));
+    const run = await src.pushBuild({ name: 'args.bin', bytes }, { args: 'nolive tag=args-check' });
+    expect(run.args).toBe('nolive tag=args-check');
+    let r = await getRun(base, run.id);
+    await until(async () => { r = await getRun(base, run.id); return !['queued', 'pushing', 'running'].includes(r.state); }, 40000);
+    expect(r.args).toBe('nolive tag=args-check');
+    const rep = await (await fetch(base.replace(/\/$/, '') + ENDPOINTS.report(run.id), { headers: { 'X-Contract': '1' } })).text();
+    expect(rep).toContain('args=nolive tag=args-check');
+  }, 60000);
 });

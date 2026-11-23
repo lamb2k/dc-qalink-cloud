@@ -151,6 +151,8 @@ button { font: inherit; }
 
 /* runs */
 .run-drop { margin: var(--s-2); }
+.run-args { display: flex; flex-direction: column; gap: var(--s-1); margin: var(--s-2) var(--s-2) 0; }
+.run-args .l { font-size: var(--fs-xs); color: var(--text-muted); }
 .code { margin: 0; padding: var(--s-2) 0; background: var(--bg-inset); border-radius: var(--r-2); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-sm); overflow: auto; }
 .code .cl { display: grid; grid-template-columns: var(--s-10) 1fr; gap: var(--s-3); padding: 0 var(--s-2); white-space: pre; }
 .code .cl .no { color: var(--text-faint); text-align: right; }
@@ -171,3 +173,5 @@ button { font: inherit; }
 .mon-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: var(--bw) solid var(--border); }
 .mon .kpi { padding: var(--s-3); }
 .mon-foot { font-size: var(--fs-xs); color: var(--text-muted); }
+.xspark { display: inline-block; width: var(--s-16); height: var(--s-4); margin-left: var(--s-2); vertical-align: middle; }
+.xspark path { fill: none; stroke: var(--chart-wait); stroke-width: 1.5; vector-effect: non-scaling-stroke; }

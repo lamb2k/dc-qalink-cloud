@@ -1,12 +1,22 @@
 // The session store: everything the UI reads. Append-only while a session runs; truncate() for replay seeks.
 // Pictures are indexed by number n (1-based). A picture that never arrived is a gap: its values read NaN and
 // gaps() lists it, so charts break the line instead of joining across it.
-import type { CounterRecord, GrabRecord, LogRecord, MetaRecord, PhaseDef, RowRecord, SessionRecord, TraceRecord } from './format';
+import type { CounterRecord, GrabRecord, LogRecord, MetaRecord, PhaseDef, RowRecord, SessionRecord, TraceRecord, XValue } from './format';
 
 export interface TraceEvent { lane: number; start: number; end: number; label: string }
 export interface Stats { mean: number; p95: number; worst: number; at: number; over: number; n: number }
 
 const NONE = Number.NaN;
+/** Row fields the meta does not declare are kept too, within bounds: at most X_KEYS keys; numbers get a column like a
+ *  declared extra (so they can be plotted); strings (cut to X_STR characters) and arrays (numbers only, the first
+ *  X_ARR) are kept as changes, at most X_CHANGES per key (the oldest go first). */
+export const X_KEYS = 32, X_STR = 64, X_ARR = 16, X_CHANGES = 4096;
+export interface XField { key: string; kind: 'num' | 'val' }
+type XChange = { n: number; v: XValue };
+const xClean = (v: unknown): XValue | undefined =>
+  typeof v === 'number' ? v : typeof v === 'string' ? v.slice(0, X_STR)
+    : Array.isArray(v) ? v.slice(0, X_ARR).map((e) => (typeof e === 'number' ? e : Number.NaN)) : undefined;
+const xSame = (a: XValue, b: XValue): boolean => (Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((e, i) => Object.is(e, b[i])) : a === b);
 
 export class SessionStore {
   meta: MetaRecord | null = null;
@@ -33,6 +43,12 @@ export class SessionStore {
   traceCount = 0;
   grabs: GrabRecord[] = [];
   counters: CounterRecord[] = [];
+  /** undeclared row fields in the order first seen, and the changes of the non-numeric ones */
+  private xs: XField[] = [];
+  private xNum = new Set<string>();
+  private xChanges = new Map<string, XChange[]>();
+  /** values not kept: keys past X_KEYS, objects, a different kind than the key's first value */
+  xDropped = 0;
 
   reset(meta: MetaRecord | null = null): void {
     this.meta = meta; this.maxN = 0; this.count = 0; this.ended = false;
@@ -41,6 +57,7 @@ export class SessionStore {
     this.lanes = meta?.lanes ? [...meta.lanes] : [];
     for (let i = 0; i < this.lanes.length; i++) { this.trace.push([]); this.laneMaxDur.push(0); }
     this.grabs = []; this.counters = [];
+    this.xs = []; this.xNum.clear(); this.xChanges.clear(); this.xDropped = 0;
     this.version++;
   }
 
@@ -50,6 +67,7 @@ export class SessionStore {
   private keys(): string[] {
     const k = this.phases.map((p) => p.key);
     for (const e of this.meta?.extras ?? []) k.push(e.key);
+    for (const x of this.xNum) k.push(x);
     return k;
   }
 
@@ -88,9 +106,35 @@ export class SessionStore {
     if (!this.have[r.n]) this.count++;
     this.have[r.n] = 1;
     for (const [k, v] of Object.entries(r.ph)) this.cols.get(k)?.set([v], r.n);
-    if (r.x) for (const [k, v] of Object.entries(r.x)) this.cols.get(k)?.set([v], r.n);
+    if (r.x) for (const [k, v] of Object.entries(r.x)) this.addX(k, v, r.n);
     this.fields[r.n] = r.f ?? 0;
     if (r.n > this.maxN) this.maxN = r.n;
+  }
+  private addX(k: string, raw: unknown, n: number): void {
+    const col = this.cols.get(k);
+    if (col) { if (typeof raw === 'number') col[n] = raw; else this.xDropped++; return; }
+    const v = xClean(raw); if (v === undefined) { this.xDropped++; return; }
+    let ch = this.xChanges.get(k);
+    if (!ch) {
+      if (this.xs.length >= X_KEYS) { this.xDropped++; return; }
+      if (typeof v === 'number') {   // a new numeric field: a column, like a declared extra
+        const a = new Float32Array(this.cap).fill(NONE); a[n] = v;
+        this.cols.set(k, a); this.xNum.add(k); this.xs.push({ key: k, kind: 'num' }); return;
+      }
+      ch = []; this.xChanges.set(k, ch); this.xs.push({ key: k, kind: 'val' });
+    }
+    if (ch.length && ch[ch.length - 1].n > n) { this.addSorted(ch, { n, v }); }
+    else if (!ch.length || !xSame(ch[ch.length - 1].v, v)) ch.push({ n, v });
+    if (ch.length > X_CHANGES) ch.splice(0, ch.length - X_CHANGES);
+  }
+  /** the undeclared row fields seen so far */
+  xFields(): XField[] { return this.xs; }
+  /** an undeclared field's value at picture n: a number (NaN for a gap), or the last string or array sent at or before n */
+  xAt(key: string, n: number): XValue | undefined {
+    if (this.xNum.has(key)) return this.value(key, n);
+    const ch = this.xChanges.get(key); if (!ch) return undefined;
+    let lo = 0, hi = ch.length; while (lo < hi) { const m = (lo + hi) >> 1; if (ch[m].n <= n) lo = m + 1; else hi = m; }
+    return lo ? ch[lo - 1].v : undefined;
   }
   private addTrace(r: TraceRecord): void {
     let li = this.lanes.indexOf(r.lane);
@@ -125,6 +169,7 @@ export class SessionStore {
     this.trace = this.trace.map((lane) => { const keep = lane.slice(0, lowerBound(lane, n + 1)); this.traceCount += keep.length; return keep; });
     this.grabs = this.grabs.filter((g) => g.n <= n);
     this.counters = this.counters.filter((c) => c.n <= n);
+    for (const ch of this.xChanges.values()) { let k2 = ch.length; while (k2 > 0 && ch[k2 - 1].n > n) k2--; ch.length = k2; }
     this.ended = false;
     this.version++;
   }
