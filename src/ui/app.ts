@@ -20,6 +20,7 @@ import { SettingsPage } from '../pages/settings';
 import { SetupPage, type StepId } from '../pages/setup';
 import { DEFAULT_BRIDGE } from '../data/bridge-client';
 import { desktop } from '../platform/desktop';
+import { sourceBadge, sourceChanged } from '../data/scope';
 import BRAND_SVG from '../../assets/icon/dc-qalink-cloud.svg?raw';
 
 export interface AppOptions { ws?: Workspace; theme?: 'dark' | 'light'; phone?: boolean; demoUrl: string; privateUrl?: string; bridge?: string }
@@ -59,7 +60,7 @@ export class App implements LayoutHost {
     this.layout = loadLayout(this.ws);
     this.timeline = new Timeline(this);
     this.registerCommands();
-    this.bindSource();
+    this.bindSource(); sourceChanged(this.source);
     this.render();
     window.addEventListener('keydown', (e) => this.onKey(e));
     requestAnimationFrame((t) => this.loop(t));
@@ -76,7 +77,8 @@ export class App implements LayoutHost {
   resetTimeline(): void { this.timeline.reset(); }
   get pageEl(): Page | null { return this.page; }
 
-  get store(): SessionStore { return this.source instanceof IdleSource ? this.source.last?.store ?? this.source.store : this.source.store; }
+  // the current source's store only: never the demo's (or another source's) data as a fallback
+  get store(): SessionStore { return this.source.store; }
   /** replay: the recording's last picture (the axis spans it); live: 0 (the axis spans what arrived) */
   span(): number { return this.source instanceof ReplaySource ? this.source.length : this.source instanceof IdleSource ? this.source.last?.length ?? 0 : 0; }
 
@@ -86,14 +88,14 @@ export class App implements LayoutHost {
     this.unsub.push(this.source.on('state', () => { this.statusKey = ''; this.topKey = ''; }));
   }
   async setSource(s: Source, at?: number): Promise<void> {
-    this.source.stop(); this.source = s; this.bindSource();
+    this.source.stop(); this.source = s; this.bindSource(); sourceChanged(s);
     this.view = new View();
     await s.start();
     if (at != null && s instanceof ReplaySource) { this.view.follow = false; this.view.playhead = Math.min(at, s.length); }
     this.mainKey = ''; this.topKey = ''; this.statusKey = '';
   }
   async openDemo(at?: number, url = this.opt.demoUrl): Promise<void> {
-    try { const r = await ReplaySource.fromUrl(url); r.playing = false; await this.setSource(r, at); if (at == null) { r.seek(0); r.play(); } }
+    try { const r = await ReplaySource.fromUrl(url, { demo: url === this.opt.demoUrl }); r.playing = false; await this.setSource(r, at); if (at == null) { r.seek(0); r.play(); } }
     catch (e) { this.toast('err', 'Could not open the recording', String(e)); }
   }
   async connect(bridge: string): Promise<void> {
@@ -197,6 +199,7 @@ export class App implements LayoutHost {
       : s.state === 'connecting' ? `<span class="pill warn">${iconSvg('loader-circle', 16, 'spin')}Connecting</span>`
       : `<span class="pill">${iconSvg('circle')}No console linked</span>`;
     const what = s.state === 'replay' ? `${s.info.label ?? ''}, recorded on ${s.info.device}` : s.state === 'lost' ? `retrying in ${s.info.retryIn ?? 0} s` : s.state === 'unlinked' ? '' : `${s.info.device}${s.info.transport ? ', ' + s.info.transport.toLowerCase() : ''}`;
+    const badge = sourceBadge(s);
     const cmdBtn = h('button', { class: 'btn btn-sm', title: 'Command palette (Ctrl K)', html: iconSvg('search') }); cmdBtn.append('Commands', h('span', { class: 'kbd' }, 'Ctrl K'));
     cmdBtn.addEventListener('click', () => this.palette());
     const themeBtn = h('button', { class: 'icon-btn', title: `Light or dark theme (T)`, 'aria-label': 'Switch theme', html: iconSvg(this.theme === 'dark' ? 'sun' : 'moon') });
@@ -204,6 +207,7 @@ export class App implements LayoutHost {
     this.top.replaceChildren(
       h('span', { class: 'brand', title: 'DC QA Link Cloud, built on dc-qalink 0.2' }, h('span', { class: 'brand-mark', html: BRAND_SVG }), h('span', { class: 'brand-name' }, 'DC QA Link Cloud')),
       tabs, h('span', { class: 'grow' }),
+      h('span', { class: `src-badge ${badge.kind}`, 'data-source': badge.kind, title: badge.text }, badge.text),
       h('span', { class: 'top-link', html: pill }, what ? h('span', { class: 'muted ellipsis', title: what }, what) : null),
       h('span', { class: 'sep-v' }), cmdBtn, themeBtn);
   }
@@ -220,6 +224,7 @@ export class App implements LayoutHost {
     const s = this.source; const st = this.store; const v = this.view;
     const it = (ic: string, text: string, cls = '') => h('span', { class: 'item ' + cls, title: text, html: iconSvg(ic) }, h('span', null, text));
     const items: Node[] = [];
+    { const b = sourceBadge(s); items.push(h('span', { class: `item src-badge ${b.kind}`, 'data-source': b.kind, title: b.text }, b.text)); }
     if (s.state === 'linked') items.push(it('circle-dot', 'Linked', 'ok'), it('cable', s.info.transport));
     else if (s.state === 'replay') items.push(it('history', `Replay at ${s.speed}x, not live`, 'info'));
     else if (s.state === 'lost') items.push(it('link-2-off', `Link lost at picture ${s.info.lostAt ?? st.maxN}, data kept`, 'err'));
@@ -413,7 +418,9 @@ export class App implements LayoutHost {
   }
   async pushBuild(f: File | { name: string; bytes: Uint8Array }): Promise<void> {
     const args = this.argsFor(f.name); this.setArgsFor(f.name, args);
-    try { const r = await this.source.pushBuild(f, { args }); this.view.set('run', r.id); this.toast('info', `Pushed ${r.file}`, `${r.bytes.toLocaleString('en-GB')} B, sha256 ${r.sha256.slice(0, 12)}, ${r.state}${args ? `, arguments: ${args}` : ''}`); }
+    // no run deadline unless Settings names one: a run played by hand lasts as long as the person plays
+    const deadline_s = Number((await desktop()?.settings().catch(() => null))?.runDeadline || 0) || undefined;
+    try { const r = await this.source.pushBuild(f, { args, deadline_s }); this.view.set('run', r.id); this.toast('info', `Pushed ${r.file}`, `${r.bytes.toLocaleString('en-GB')} B, sha256 ${r.sha256.slice(0, 12)}, ${r.state}${args ? `, arguments: ${args}` : ''}`); }
     catch (e) { this.toast('err', 'Push failed', String(e)); }
   }
   private nextOver(): void {

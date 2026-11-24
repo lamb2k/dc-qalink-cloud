@@ -7,7 +7,7 @@
 import { CONTRACT, contractCompatible, ENDPOINTS, uiStatus, type BridgeStatus, type HelloMessage, type C1Still, type C1Status, type CommandRequest, type CommandResult, type LiveMessage, type MemoryReadResult, type RunRecord } from './bridge-api';
 import { listRuns, pushProgram, sendCommand } from './bridge-client';
 import type { GrabRecord, MetaRecord, SessionRecord } from './format';
-import { Emitter, deviceLabel, type Source, type SourceInfo, type SourceState } from './source';
+import { Emitter, MemoryUnsupportedError, deviceLabel, type Source, type SourceInfo, type SourceState } from './source';
 import { SessionStore } from './store';
 
 const RETRY_S = 4;
@@ -42,11 +42,14 @@ export class LiveSource extends Emitter implements Source {
   async start(): Promise<void> { this.stopped = false; void this.connect(); }
   stop(): void { this.stopped = true; this.abort?.abort(); this.abort = null; }
 
-  private async connect(): Promise<void> {
+  /** one quiet reconnect after a linked stream drops (the bridge or a proxy closed it): the view stays live if it
+   *  comes straight back; only a failed retry shows the link as lost */
+  private quickTried = false;
+  private async connect(quiet = false): Promise<void> {
     const from = this.store.maxN;
     const u = this.url(ENDPOINTS.live) + (from && this.session ? `?from=${from}&session=${encodeURIComponent(this.session)}` : '');
     const ac = new AbortController(); this.abort = ac;
-    if (this.state !== 'lost') this.setState('connecting');
+    if (this.state !== 'lost' && !quiet) this.setState('connecting');
     let res: Response;
     try { res = await this.fetchFn(u, { headers: { Accept: 'text/event-stream', 'X-Contract': String(CONTRACT) }, signal: ac.signal }); }
     catch (e) { if (this.abort === ac) this.lose(String(e)); return; }
@@ -70,6 +73,7 @@ export class LiveSource extends Emitter implements Source {
   }
   private lose(error?: string): void {
     const wasLinked = this.state === 'linked';
+    if (wasLinked && !this.quickTried && !this.stopped) { this.quickTried = true; void this.connect(true); return; }
     this.info.lostAt = this.store.maxN;
     this.info.attempt = wasLinked ? 1 : (this.info.attempt ?? 0) + 1;
     this.info.error = error;
@@ -99,16 +103,30 @@ export class LiveSource extends Emitter implements Source {
       if (m.session && m.meta && (m.session !== this.session || !this.store.meta)) this.newSession(m.session, m.meta);
       this.info.device = m.device?.address ? deviceLabel({ kind: m.device.kind, name: m.device.name }) : 'Bridge (no console heard yet)';
       this.info.transport = m.device?.transport === 'modem' ? 'Modem' : 'Broadband adapter';
-      this.info.lostAt = undefined; this.info.error = undefined; this.info.attempt = 0;
+      this.info.lostAt = undefined; this.info.error = undefined; this.info.attempt = 0; this.quickTried = false;
       this.setState('linked');
     }
   }
+  /** the header's device follows the stream: a session's meta names the device, a link record says the program or
+   *  loader is up and how; the hello at connect time may predate both ("no console heard yet") */
+  private noteDevice(m: LiveMessage): void {
+    const r = m as { t: string; state?: string; transport?: string; console_ip?: string; kind?: string; name?: string; address?: string; device?: { kind?: string; name?: string; transport?: string } };
+    let dev: string | undefined; let tr: string | undefined;
+    if (r.t === 'meta' && r.device && (r.device.kind === 'console' || r.device.kind === 'flycast')) { dev = deviceLabel({ kind: r.device.kind, name: r.device.name ?? '' }); tr = r.device.transport; }
+    else if (r.t === 'link' && r.state === 'up') { const d = this.store.meta?.device; dev = deviceLabel({ kind: d?.kind ?? 'console', name: d?.name ?? (r.console_ip && !/^127\./.test(r.console_ip) ? 'Dreamcast' : 'Flycast') }); tr = r.transport; }
+    else if (r.t === 'hello' && r.address && (r.kind === 'console' || r.kind === 'flycast')) { dev = deviceLabel({ kind: r.kind, name: r.name ?? '' }); tr = r.transport; }
+    if (!dev) return;
+    const transport = tr === 'modem' ? 'Modem' : tr ? 'Broadband adapter' : this.info.transport;
+    if (dev !== this.info.device || transport !== this.info.transport) { this.info.device = dev; this.info.transport = transport; this.emit('state'); }
+  }
   private onRecord(m: LiveMessage): void {
+    this.noteDevice(m);
     if (m.t === 'status') { const st = m as { rate_bps: number; paused: boolean }; this.info.rateBps = st.rate_bps; this.playing = !st.paused; this.emit('state'); return; }
     if (m.t === 'meta') { const mm = m as unknown as MetaRecord & { id: string }; if (mm.id !== this.session || !this.store.meta) this.newSession(mm.id, mm); else this.store.append(mm as SessionRecord); this.emit('data'); return; }
     if (!KNOWN.has(m.t)) { this.events.push(m); if (this.events.length > 500) this.events.splice(0, 100); this.emit('event'); return; }
     const r = m as SessionRecord & { url?: string };
-    if (r.t === 'grab' && r.url && !(r as GrabRecord).data) { void this.fetchGrab(r as GrabRecord); return; }
+    // the picture comes later; the hold is now (the stream is in order, the fetch is not)
+    if (r.t === 'grab' && r.url && !(r as GrabRecord).data) { if ((r as GrabRecord).kind === 'console') this.store.holdNext(); void this.fetchGrab(r as GrabRecord); return; }
     this.store.append(r); this.emit('data');
   }
   /** a grab on the stream names its PNG; the picture is fetched and kept inline so the canvas can read its pixels */
@@ -117,7 +135,7 @@ export class LiveSource extends Emitter implements Source {
       const res = await this.fetchFn(this.url(g.url!), { headers: { 'X-Contract': String(CONTRACT) } });
       if (!res.ok) return null;
       const full = { ...g, url: undefined, data: toBase64(new Uint8Array(await res.arrayBuffer())) } as GrabRecord;
-      this.store.append(full); this.emit('data');
+      this.store.addGrabLate(full); this.emit('data');
       return full;
     } catch { return null; }
   }
@@ -158,12 +176,16 @@ export class LiveSource extends Emitter implements Source {
     return this.fetchGrab({ t: 'grab', n: j.picture, w: j.width, h: j.height, fmt: 'png', url: ENDPOINTS.still(j.id), label: `grab ${j.id} (${j.tier})`, kind: 'console' } as GrabRecord);
   }
   async runs(): Promise<RunRecord[]> { return listRuns(this.base); }
-  async pushBuild(file: File | { name: string; bytes: Uint8Array }, opts: { args?: string } = {}): Promise<RunRecord> {
+  async pushBuild(file: File | { name: string; bytes: Uint8Array }, opts: { args?: string; deadline_s?: number } = {}): Promise<RunRecord> {
     const bytes = file instanceof File ? new Uint8Array(await file.arrayBuffer()) : file.bytes;
-    return pushProgram(this.base, file.name, bytes, { args: opts.args });
+    return pushProgram(this.base, file.name, bytes, { args: opts.args, deadline_s: opts.deadline_s || undefined });
   }
   async readMemory(addr: number, len: number): Promise<MemoryReadResult> {
     const r = await this.fetchFn(this.url(ENDPOINTS.memoryRead), { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Contract': String(CONTRACT) }, body: JSON.stringify({ addr, len }) });
-    const j = await r.json(); if (!r.ok) throw new Error(j.error ?? `bridge answered ${r.status}`); return j;
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 501 || (!r.ok && /not in this loader/i.test(String(j.error ?? '')))) { this.memorySupported = false; throw new MemoryUnsupportedError(j.error); }
+    if (!r.ok) throw new Error(j.error ?? `bridge answered ${r.status}`);
+    this.memorySupported = true; return j;
   }
+  memorySupported?: boolean;
 }

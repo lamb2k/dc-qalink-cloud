@@ -9,14 +9,19 @@ import { desktop } from '../platform/desktop';
 import { download, esc, h, iconSvg } from '../ui/dom';
 import { openDialog } from '../ui/dialog';
 import { btn, empty, toolBtn, type Editor, type EditorDef } from './base';
+import { isDemo, onSourceChange, perSource } from '../data/scope';
 
 interface Hist { t: string; label: string; ok: boolean | null; detail: string; n?: number }
-const S = {
-  reg: null as GameRegistry | null, regFrom: '', regFor: '', regV: 0, loading: false, handle: '',
-  hist: [] as Hist[], histV: 0,
-  held: new Set<PadButton>(), stick: [0, 0] as [number, number], lt: 0, rt: 0, padV: 0,
-  script: '', scriptName: '', scriptV: 0,
-};
+// one state per source (data/scope.ts): presets, history, pad and script never carry from the demo to a live build
+let genV = 0;
+const newState = () => ({
+  reg: null as GameRegistry | null, regFrom: '', regFor: '', regV: ++genV * 1000, loading: false, handle: '',
+  hist: [] as Hist[], histV: ++genV * 1000,
+  held: new Set<PadButton>(), stick: [0, 0] as [number, number], lt: 0, rt: 0, padV: ++genV * 1000,
+  script: '', scriptName: '', scriptV: ++genV * 1000,
+});
+let S = newState();
+onSourceChange((s) => { S = perSource(s, 'commands', newState); });
 const linked = (app: App) => app.source.kind === 'live' && app.source.state === 'linked';
 const now = () => new Date().toTimeString().slice(0, 8);
 
@@ -33,7 +38,8 @@ async function loadRegistry(app: App, force = false): Promise<void> {
   S.loading = true; S.regFor = key;
   try {
     if (linked(app)) { const r = await registry(app.bridgeUrl); S.reg = r; S.regFrom = 'the running program (bridge)'; S.regV++; if (!S.script && r.scripts[0]) { S.script = r.scripts[0].text; S.scriptName = r.scripts[0].name; S.scriptV++; } }
-    else if (!S.handle) { const r = await fetch(`${import.meta.env.BASE_URL}example-presets.json`); parseRegistry(await r.text(), 'example-presets.json'); }
+    // the example presets belong to the demo only; a live build or another recording shows its own or none
+    else if (!S.handle && isDemo(app.source)) { const r = await fetch(`${import.meta.env.BASE_URL}example-presets.json`); parseRegistry(await r.text(), 'example-presets.json'); }
   } catch (e) { app.toast('err', 'Could not read the warp presets', String(e)); }
   finally { S.loading = false; }
 }
@@ -69,7 +75,7 @@ export async function send(app: App, c: CommandRequest, label: string, quiet = f
 
 function replayNote(app: App): HTMLElement {
   const el = h('div', { class: 'replay-note', html: iconSvg('info') });
-  el.append(h('span', null, app.source.kind === 'replay' ? 'Replay: these controls send to a linked console. Showing the example presets file.' : 'No console linked: these controls send to a linked console.'));
+  el.append(h('span', null, isDemo(app.source) ? 'Demo: these controls send to a linked console. Showing the example presets of the demo.' : app.source.kind === 'replay' ? 'Recording: these controls send to a linked console.' : 'No console linked: these controls send to a linked console.'));
   const b = btn('Connect', () => app.cmds.run('link.local'), { small: true, icon: 'plug' }); b.style.marginLeft = 'auto'; el.append(b);
   return el;
 }
@@ -91,7 +97,11 @@ class Warp implements Editor {
     this.note.replaceChildren(...(linked(this.app) ? [] : [replayNote(this.app)]));
     const q = this.filter.value.trim().toLowerCase();
     const ps = (S.reg?.presets ?? []).filter((p) => !q || `${p.label} ${p.id} ${p.group ?? ''} ${p.detail ?? ''}`.toLowerCase().includes(q));
-    if (!ps.length) { this.list.replaceChildren(empty('crosshair', S.reg ? 'No preset matches' : 'No presets yet', S.reg ? 'Clear the search to see them all.' : 'The running program registers its presets with the link, or open a presets file.')); return; }
+    if (!ps.length) {
+      const none = !S.reg?.presets.length;
+      const title = !none ? 'No preset matches' : this.app.source.kind === 'live' ? 'This build declares no presets' : this.app.source.kind === 'replay' && !isDemo(this.app.source) ? 'This recording has no presets' : 'No presets yet';
+      this.list.replaceChildren(empty('crosshair', title, !none ? 'Clear the search to see them all.' : 'A program registers its presets with the link (dcql_live presets), or open a presets file.')); return;
+    }
     const t = h('table', { class: 'table dense cmd-list' }); const tb = h('tbody');
     t.innerHTML = '<thead><tr><th>Preset</th><th>Id</th><th>What it does</th><th></th></tr></thead>';
     let g = '';

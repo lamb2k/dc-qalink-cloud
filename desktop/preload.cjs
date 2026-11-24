@@ -38,4 +38,9 @@ contextBridge.exposeInMainWorld('qalink', Object.freeze({
   swapSampleTexture: () => inv('builds:swap-sample-texture'),
   settings: () => inv('settings:get'),
   setSetting: (key, value) => inv('settings:set', String(key), value),
+  bridgePython: () => inv('bridge:python'),
+  chooseBridgePython: () => inv('bridge:choose-python'),
+  defaultBridgePython: () => inv('bridge:default-python'),
+  firewallCheck: () => inv('firewall:check'),
+  firewallAllow: () => inv('firewall:allow'),
 }));

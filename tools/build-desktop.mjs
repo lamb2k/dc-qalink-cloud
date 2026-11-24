@@ -49,6 +49,7 @@ mkdirSync(join(STAGE, 'res', 'tools'), { recursive: true });
 // the app (inside app.asar)
 cpSync(join(root, 'desktop/main.mjs'), join(STAGE, 'app/desktop/main.mjs'));
 cpSync(join(root, 'desktop/preload.cjs'), join(STAGE, 'app/desktop/preload.cjs'));
+for (const f of ['launch.mjs', 'firewall.mjs']) cpSync(join(root, 'desktop', f), join(STAGE, 'app/desktop', f));   // imported by main.mjs
 cpSync(join(root, 'dist'), join(STAGE, 'app/web'), { recursive: true, filter: (s) => !/speed(\.html|-[\w-]+\.js)$/.test(s) });
 writeFileSync(join(STAGE, 'app/package.json'), JSON.stringify({ name: pkg.name, productName: pkg.productName, version: pkg.version, description: pkg.description, license: pkg.license, type: 'module', main: 'desktop/main.mjs' }, null, 2));
 

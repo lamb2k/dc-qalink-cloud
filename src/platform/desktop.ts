@@ -14,8 +14,8 @@ export interface ProgramStatus { id: ProgramId; label: string; configured: boole
 export interface McpLaunch { command: string; args: string[]; env: Record<string, string> }
 export interface AppInfo { app: string; version: string; electron: string; chrome: string; node: string; platform: string; packaged: boolean; dataDir: string; mcp: McpLaunch; capture: boolean }
 export type Connection = 'bba' | 'modem' | 'flycast';
-export interface AppSettings { version: 1; startBridgeOnLaunch: boolean; bridgeAddress: string; flycastPath: string; mcpLocal: boolean; flycastPrepared: string; consoleOnNetwork?: boolean; autoconnect?: boolean; connection?: Connection | ''; buildsRoot?: string }
-export type SettingKey = 'startBridgeOnLaunch' | 'bridgeAddress' | 'mcpLocal' | 'consoleOnNetwork' | 'autoconnect' | 'connection';
+export interface AppSettings { version: 1; startBridgeOnLaunch: boolean; bridgeAddress: string; flycastPath: string; mcpLocal: boolean; flycastPrepared: string; consoleOnNetwork?: boolean; autoconnect?: boolean; connection?: Connection | ''; buildsRoot?: string; runDeadline?: string }
+export type SettingKey = 'startBridgeOnLaunch' | 'bridgeAddress' | 'mcpLocal' | 'consoleOnNetwork' | 'autoconnect' | 'connection' | 'runDeadline';
 /** the builds folder: the one folder the bridge shares with the console (files, network disc overlay, asset root) */
 export interface BuildsInfo { root: string; sample: boolean; sampleAvailable: boolean; connection: Connection | ''; programs: string[]; shared: string }
 
@@ -53,12 +53,22 @@ export interface QalinkDesktop {
   swapSampleTexture(): Promise<{ changed: string; bytes: number }>;
   settings(): Promise<AppSettings>;
   setSetting(key: SettingKey, value: boolean | string): Promise<AppSettings>;
+  /** the Python the bridge runs with (Settings: "Python for the bridge"; else QALINK_PYTHON; else the bundled one) */
+  bridgePython(): Promise<PythonInfo>;
+  chooseBridgePython(): Promise<PythonInfo>;
+  defaultBridgePython(): Promise<PythonInfo>;
+  /** whether a Windows Firewall rule lets that Python take UDP in (no elevation needed to look) */
+  firewallCheck(): Promise<{ known: boolean; allowed: boolean; exe: string }>;
+  /** adds that rule after the person confirms, through Windows' own administrator prompt */
+  firewallAllow(): Promise<{ ok: boolean; message: string }>;
 }
+export interface PythonInfo { python: string; label: string; chosen: boolean; fromEnv: boolean; ruleName: string }
 
 /** The IPC channels the preload uses; the main process handles exactly these (tests/desktop.test.ts checks both). */
 export const IPC_CHANNELS = ['app:info', 'file:open', 'file:read-dropped', 'file:reread', 'file:save', 'file:watch', 'file:unwatch', 'net:interfaces',
   'prog:list', 'prog:start', 'prog:stop', 'prog:choose-flycast', 'prog:prepare-flycast', 'builds:info', 'builds:choose', 'builds:use-sample', 'builds:read',
-  'builds:swap-sample-texture', 'settings:get', 'settings:set'] as const;
+  'builds:swap-sample-texture', 'settings:get', 'settings:set', 'bridge:python', 'bridge:choose-python', 'bridge:default-python',
+  'firewall:check', 'firewall:allow'] as const;
 export const IPC_EVENTS = ['file:changed', 'prog:status'] as const;
 
 declare global { interface Window { qalink?: QalinkDesktop } }

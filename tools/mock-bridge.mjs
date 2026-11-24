@@ -170,7 +170,7 @@ const server = createServer(async (req, res) => {
       const ls = body.filter((r) => r.t === 'log' && (r.n ?? 0) >= from && (r.n ?? 0) <= to && (!lv || r.lv === lv || (lv === 'warn' && r.lv === 'err')) && (!q || r.msg.toLowerCase().includes(q))).map((r) => ({ n: r.n, lv: r.lv, msg: r.msg }));
       return json(res, 200, { from, to, lines: ls.slice(-limit), truncated: ls.length > limit });
     }
-    if (p === '/v0/presets') return json(res, 200, registry);
+    if (p === '/v0/presets') return json(res, 200, args.includes('--no-presets') ? { ...registry, presets: [], options: [], scripts: [] } : registry);
     if (p === '/v0/command' && req.method === 'POST') {
       const c = JSON.parse((await readBody(req)).toString() || '{}'); const id = `c${Date.now()}`;
       log('command', JSON.stringify(c).slice(0, 200));

@@ -73,7 +73,10 @@ class Outliner implements Editor {
   frame(force: boolean): void {
     if (!this.w.changed(this.app) && !force) return;
     const st = this.app.store; const nodes = st.meta?.outline ?? [];
-    if (!nodes.length) { this.el.replaceChildren(empty('list', 'Nothing to outline', 'The outline appears when a session starts.')); return; }
+    if (!nodes.length) {
+      const s0 = this.app.source; const has = !!st.meta;
+      this.el.replaceChildren(empty('list', has && s0.kind === 'live' ? 'This build declares no outline' : has ? 'This recording has no outline' : 'Nothing to outline', has ? 'A program describes itself (scene, assets, memory) in its session meta; this one does not.' : 'The outline appears when a session starts.')); return;
+    }
     const s = this.app.source;
     this.el.innerHTML = nodes.map((n, i) => `<div class="node${n.depth ? ' d' + Math.min(2, n.depth) : ''}${i === 2 ? ' is-selected' : ''}" role="treeitem" aria-level="${n.depth + 1}">${n.depth === 0 ? iconSvg('chevron-down') : ''}${iconSvg(n.icon)}<span class="ellipsis" title="${esc(n.label)}">${esc(n.label)}</span><span class="v" title="${esc(n.value ?? '')}">${esc(n.value ?? '')}</span></div>`).join('')
       + `<div class="node d1">${iconSvg('timer')}<span>Playhead</span><span class="v">picture ${this.app.view.playhead}</span></div>`
@@ -114,7 +117,7 @@ class Properties implements Editor {
     const row = (l: string, v: number, budget?: number) => `<dt title="${esc(l)}">${esc(l)}</dt><dd class="${budget && v > budget ? 'over' : ''}">${fmt(v)}</dd>`;
     let html = `<div class="prop-section"><div class="section-title">${iconSvg('timer')}Picture ${n}${st.has(n) || !n ? '' : ' - not received (gap)'}</div><dl class="props">`;
     for (const p of st.phases) html += row(p.budget ? `${p.label} (budget ${fmt(p.budget, 1)})` : p.label, st.value(p.key, n), p.budget);
-    html += `<dt>Fields shown</dt><dd>${st.has(n) ? st.fieldsAt(n) : '-'}</dd></dl></div>`;
+    html += `<dt>Fields shown</dt><dd>${st.has(n) ? st.fieldsAt(n) : '-'}</dd>${st.isHeld(n) ? '<dt>Held</dt><dd class="faint" title="A console grab or a pause held the program here; this picture is left out of the statistics">by a grab or pause</dd>' : ''}</dl></div>`;
     const groups = new Map<string, { key: string; label: string }[]>();
     for (const e of m.extras ?? []) { const g = e.group ?? 'More'; if (!groups.has(g)) groups.set(g, []); groups.get(g)!.push(e); }
     for (const [g, es] of groups) {

@@ -35,6 +35,11 @@ export class SessionStore {
   private cols = new Map<string, Float32Array>();
   private fields = new Uint8Array(0);
   private have = new Uint8Array(0);
+  /** pictures held by the app or an agent (a console grab, a pause then resume): their time is the hold, not the
+   *  program's, so the statistics and the slowest lists leave them out. The first row after the hold is marked. */
+  private held = new Uint8Array(0);
+  private holdPending = false;
+  heldCount = 0;
 
   logs: LogRecord[] = [];
   /** for each log line, its picture (or 0 for lines with no picture) - parallel to logs */
@@ -55,7 +60,7 @@ export class SessionStore {
 
   reset(meta: MetaRecord | null = null): void {
     this.meta = meta; this.maxN = 0; this.count = 0; this.ended = false; this.logsDropped = 0;
-    this.cap = 0; this.cols.clear(); this.fields = new Uint8Array(0); this.have = new Uint8Array(0);
+    this.cap = 0; this.cols.clear(); this.fields = new Uint8Array(0); this.have = new Uint8Array(0); this.held = new Uint8Array(0); this.holdPending = false; this.heldCount = 0;
     this.logs = []; this.logN = []; this.trace = []; this.laneMaxDur = []; this.traceCount = 0;
     this.lanes = meta?.lanes ? [...meta.lanes] : [];
     for (let i = 0; i < this.lanes.length; i++) { this.trace.push([]); this.laneMaxDur.push(0); }
@@ -86,6 +91,7 @@ export class SessionStore {
     }
     const f = new Uint8Array(cap); f.set(this.fields); this.fields = f;
     const h = new Uint8Array(cap); h.set(this.have); this.have = h;
+    const hd = new Uint8Array(cap); hd.set(this.held); this.held = hd;
     this.cap = cap;
   }
 
@@ -96,8 +102,8 @@ export class SessionStore {
       case 'log': this.addLog(r, r.n ?? 0); break;
       // what the program printed: a log line at the latest picture (0 before the first row)
       case 'line': this.addLog({ t: 'log', n: this.maxN, lv: 'serial', msg: String(r.text ?? '').replace(/\r?\n$/, '').slice(0, LINE_MAX) }, this.maxN); break;
-      case 'trace': this.addTrace(r); break;
-      case 'grab': this.addSorted(this.grabs, r); break;
+      case 'trace': this.addTrace(r); if (r.lane === 'Commands' && /^(resume|step)/.test(r.label)) this.holdPending = true; break;
+      case 'grab': this.addSorted(this.grabs, r); if (r.kind === 'console') this.holdPending = true; break;
       case 'ctr': this.addSorted(this.counters, r); break;
       case 'end': this.ended = true; break;
     }
@@ -113,6 +119,7 @@ export class SessionStore {
     for (const [k, v] of Object.entries(r.ph)) this.cols.get(k)?.set([v], r.n);
     if (r.x) for (const [k, v] of Object.entries(r.x)) this.addX(k, v, r.n);
     this.fields[r.n] = r.f ?? 0;
+    if (this.holdPending) { this.holdPending = false; if (!this.held[r.n]) { this.held[r.n] = 1; this.heldCount++; } }
     if (r.n > this.maxN) this.maxN = r.n;
   }
   private addX(k: string, raw: unknown, n: number): void {
@@ -172,6 +179,7 @@ export class SessionStore {
       if (this.have[i]) { this.have[i] = 0; this.count--; }
       for (const a of this.cols.values()) a[i] = NONE;
       this.fields[i] = 0;
+      if (this.held[i]) { this.held[i] = 0; this.heldCount--; }
     }
     let m = Math.min(this.maxN, n); while (m > 0 && !this.have[m]) m--; this.maxN = m;
     let k = this.logs.length; while (k > 0 && this.logN[k - 1] > n) k--;
@@ -180,11 +188,18 @@ export class SessionStore {
     this.trace = this.trace.map((lane) => { const keep = lane.slice(0, lowerBound(lane, n + 1)); this.traceCount += keep.length; return keep; });
     this.grabs = this.grabs.filter((g) => g.n <= n);
     this.counters = this.counters.filter((c) => c.n <= n);
+    this.holdPending = false;
     for (const ch of this.xChanges.values()) { let k2 = ch.length; while (k2 > 0 && ch[k2 - 1].n > n) k2--; ch.length = k2; }
     this.ended = false;
     this.version++;
   }
 
+  /** the next row is held (a console grab announced on the live stream) */
+  holdNext(): void { this.holdPending = true; }
+  /** a grab whose picture was fetched after the stream moved on: kept, without marking a hold again */
+  addGrabLate(g: GrabRecord): void { this.addSorted(this.grabs, g); this.version++; }
+  /** a picture held by a grab or a pause (left out of the statistics) */
+  isHeld(n: number): boolean { return n >= 1 && n < this.cap && this.held[n] === 1; }
   has(n: number): boolean { return n >= 1 && n <= this.maxN && this.have[n] === 1; }
   /** a phase or extra value at picture n; NaN for a gap or unknown key */
   value(key: string, n: number): number {
@@ -210,7 +225,7 @@ export class SessionStore {
     const col = this.cols.get(key); const v: number[] = [];
     let worst = -Infinity, at = 0, over = 0, sum = 0;
     if (col) for (let n = Math.max(1, a); n <= Math.min(b, this.maxN); n++) {
-      const x = col[n]; if (Number.isNaN(x)) continue;
+      const x = col[n]; if (Number.isNaN(x) || this.held[n]) continue;
       v.push(x); sum += x; if (x > worst) { worst = x; at = n; } if (budget && x > budget) over++;
     }
     v.sort((p, q) => p - q);
@@ -224,7 +239,7 @@ export class SessionStore {
   slowest(key: string, k = 5): number[] {
     const col = this.cols.get(key); if (!col) return [];
     const [a, b] = this.windowRange(); const idx: number[] = [];
-    for (let n = Math.max(1, a); n <= b; n++) if (!Number.isNaN(col[n])) idx.push(n);
+    for (let n = Math.max(1, a); n <= b; n++) if (!Number.isNaN(col[n]) && !this.held[n]) idx.push(n);
     idx.sort((p, q) => col[q] - col[p]);
     return idx.slice(0, k);
   }
@@ -237,7 +252,7 @@ export class SessionStore {
   /** the k busiest pictures inside the measured window (the pacer makes picture totals tie, busy time does not) */
   slowestBusy(k = 5): number[] {
     const [a, b] = this.windowRange(); const idx: { n: number; v: number }[] = [];
-    for (let n = Math.max(1, a); n <= b; n++) { const v = this.busy(n); if (!Number.isNaN(v)) idx.push({ n, v }); }
+    for (let n = Math.max(1, a); n <= b; n++) { const v = this.busy(n); if (!Number.isNaN(v) && !this.held[n]) idx.push({ n, v }); }
     idx.sort((p, q) => q.v - p.v);
     return idx.slice(0, k).map((x) => x.n);
   }
