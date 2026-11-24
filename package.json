@@ -2,7 +2,7 @@
   "name": "qalink-cloud",
   "productName": "DC QA Link Cloud",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "DC QA Link Cloud: the developer workstation built on dc-qalink, as a Windows desktop app and a web page",
   "type": "module",
   "license": "MIT",
